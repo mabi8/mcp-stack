@@ -23,5 +23,3 @@ Thumbs.db
 .vscode/
 .idea/
 
-# Lock files (regenerated on install)
-package-lock.json

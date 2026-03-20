@@ -98,12 +98,12 @@ prepare() {
   # 5. Build (as each user, from monorepo root)
   echo ""
   echo "Building for cdapi..."
-  sudo -u cdapi bash -c "cd /home/cdapi/mcp-stack && npm ci && npm run build -w packages/core && npm run build -w packages/centerdevice"
+  sudo -u cdapi bash -c "cd /home/cdapi/mcp-stack && npm install && npm run build -w packages/core && npm run build -w packages/centerdevice"
   ok "cdapi build complete"
 
   echo ""
   echo "Building for bdroapi..."
-  sudo -u bdroapi bash -c "cd /home/bdroapi/mcp-stack && npm ci && npm run build -w packages/core && npm run build -w packages/bidrento"
+  sudo -u bdroapi bash -c "cd /home/bdroapi/mcp-stack && npm install && npm run build -w packages/core && npm run build -w packages/bidrento"
   ok "bdroapi build complete"
 
   # 6. Install nginx configs
