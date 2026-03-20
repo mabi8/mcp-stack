@@ -607,7 +607,14 @@ export function registerTools(
       folders: z.array(z.string()).optional(),
       tags: z.array(z.string()).optional(),
     },
-    (p) => cd.splitDocument(p),
+    (p) => cd.splitDocument({
+      documentId: p.document_id,
+      splits: p.splits,
+      deleteOriginal: p.delete_original,
+      collections: p.collections,
+      folders: p.folders,
+      tags: p.tags,
+    }),
   );
 
   tool("merge_documents",
@@ -619,7 +626,13 @@ export function registerTools(
       folders: z.array(z.string()).optional(),
       tags: z.array(z.string()).optional(),
     },
-    (p) => cd.mergeDocuments(p),
+    (p) => cd.mergeDocuments({
+      documentIds: p.document_ids,
+      filename: p.filename,
+      collections: p.collections,
+      folders: p.folders,
+      tags: p.tags,
+    }),
   );
 
   // ── Trash ──────────────────────────────────────────────────────────
