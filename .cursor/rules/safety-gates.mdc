@@ -1,0 +1,41 @@
+---
+description: Safety rules for irreversible operations and shared state
+alwaysApply: true
+---
+
+# Safety & Approval Gates
+
+## Never Auto-Execute
+These require explicit user confirmation:
+- Database migrations or schema changes
+- Deleting files, documents, or records
+- Sending emails or messages (Instantly, Telegram, WhatsApp)
+- Modifying CenterDevice tags, folders, or documents
+- Modifying Instantly.ai campaign state
+- Changing DNS records or domain configuration
+- Firewall rule changes (iptables)
+- systemd enable/disable (restart after deploy is OK)
+- Anything in `deploy/` that touches production
+
+## Shared Mutable State
+CenterDevice config, Bidrento tenant data, and DNS are shared resources:
+- Read current state before proposing changes
+- Show a clear before/after diff
+- Wait for approval before executing
+
+## Destructive Operations
+When asked to delete, drop, or remove:
+1. List WHAT will be affected (specific items)
+2. Confirm scope ("3 documents, not the entire folder")
+3. Ask: "Proceed? (y/n)"
+
+## Secrets
+- Never echo, log, or commit secrets
+- Never include API keys/tokens/passwords in code
+- Reference secrets via env vars only
+- If a secret appears in output, flag it immediately
+
+## Production Deploys
+- Always build + test locally first
+- Use `deploy/update.sh` — don't freestyle deploy commands
+- Check journald after restart to confirm service is healthy

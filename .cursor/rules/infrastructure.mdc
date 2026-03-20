@@ -1,0 +1,70 @@
+---
+description: Deployment, infrastructure, and ops conventions for box.makkib.com
+alwaysApply: true
+---
+
+# Infrastructure & Deployment
+
+## VPS: box.makkib.com
+- IP: 135.125.179.131
+- OS: Ubuntu 24
+- Hosting: Hetzner CPX22 (4 vCPU, 8 GB RAM)
+- Domains: INWX
+- Firewall: iptables — NEVER use ufw
+- Reverse proxy: nginx with `include /etc/nginx/mcp.d/*.conf`
+
+## Monorepo on VPS
+The repo is cloned to TWO locations (different system users):
+- `/home/cdapi/mcp-stack` — runs CenterDevice MCP (user: `cdapi`)
+- `/home/bdroapi/mcp-stack` — runs Bidrento MCP (user: `bdroapi`)
+
+## Service Registry
+
+| Service | systemd Unit | Port | User | Endpoint |
+|---------|-------------|------|------|----------|
+| CenterDevice MCP | `mcp-centerdevice` | 9443 | cdapi | https://box.makkib.com/mcp |
+| Bidrento MCP | `mcp-bidrento` | 9444 | bdroapi | https://box.makkib.com/bidrento/mcp |
+| BCL Telegram Bot* | `bcl-telegram` | 3842 | bclai | /bclai/ |
+| Log MCP* | `log-mcp` | 3850 | logmcp | https://logs.makkib.com/mcp |
+
+*separate repos, not in this monorepo
+
+## Deploy Commands
+Use `deploy/update.sh` for mcp-stack services:
+```bash
+sudo bash /home/cdapi/mcp-stack/deploy/update.sh all
+sudo bash /home/cdapi/mcp-stack/deploy/update.sh centerdevice
+sudo bash /home/cdapi/mcp-stack/deploy/update.sh bidrento
+```
+
+For other services, use the single-line pattern:
+```bash
+su - [user] -c "cd ~/[repo] && git pull && npm run build" && systemctl restart [service]
+```
+
+NEVER use multi-line blocks for deploy commands.
+
+## Nginx
+- Main server block: `deploy/nginx/box.makkib.com.conf`
+- Per-service includes: `deploy/nginx/mcp.d/*.conf`
+- Adding a new MCP = one `.conf` file in `mcp.d/` + `nginx -t && systemctl reload nginx`
+
+## Adding a New MCP Service
+1. Create `packages/{service}/` with `client.ts`, `tools.ts`, `index.ts`
+2. Add `package.json` depending on `@mcp-stack/core`
+3. Add workspace to root `package.json`
+4. Create `deploy/nginx/mcp.d/{service}.conf`
+5. Create `deploy/systemd/mcp-{service}.service`
+6. On VPS: create system user, clone repo, install unit, reload nginx
+7. Connect in Claude.ai settings
+
+## Firewall Rules
+```bash
+iptables -A INPUT -p tcp --dport [PORT] -j ACCEPT
+iptables-save > /etc/iptables/rules.v4
+```
+
+## Environment & Config
+- `.env` files for runtime config, `.env.example` committed
+- Secrets NEVER committed — managed on VPS directly
+- See `docs/ARCHITECTURE.md` for all env vars per service

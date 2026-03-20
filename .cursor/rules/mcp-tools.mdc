@@ -1,0 +1,65 @@
+---
+description: Patterns for building MCP tools in this monorepo
+globs:
+  - "packages/*/src/tools.ts"
+  - "packages/*/src/client.ts"
+  - "packages/*/src/index.ts"
+alwaysApply: false
+---
+
+# MCP Tool Development
+
+## Tool Registration
+Use `createToolRegistrar()` from `@mcp-stack/core`:
+```typescript
+import { createToolRegistrar } from '@mcp-stack/core'
+const register = createToolRegistrar(server, logger, auditLogger)
+register('tool_name', 'Description', { inputSchema }, handler)
+```
+This gives you: auto error handling, timing, audit logging — for free.
+
+## Tool Design Principles
+- Each tool does ONE thing well
+- Names: snake_case, verb-first (`search_documents`, `add_meter_reading`)
+- Descriptions: explain WHAT the tool does AND WHEN to use it
+- Input schemas: use required fields sparingly, prefer sensible defaults
+- Return structured JSON — let Claude interpret, don't write prose
+- Include pagination for list operations
+
+## Unified Tool Pattern (CenterDevice precedent)
+Merge batch + single operations into one tool that accepts one-or-many:
+- Single input: `{ documentId: "abc" }` or `{ documentIds: ["abc"] }`
+- Internally pick the most efficient API strategy (parallel exec vs native bulk)
+- See `docs/ARCHITECTURE.md` → "Unified Tools" for the full mapping
+
+## API Client Pattern
+Each package has a `client.ts` that:
+- Wraps the external API with typed methods
+- Handles auth headers, base URLs, content types
+- Returns typed responses, throws on HTTP errors
+- Documents API quirks inline (see ARCHITECTURE.md for known quirks)
+
+## CenterDevice Specifics
+- Tag operations: `add_tags` BEFORE `remove_tags` (order matters)
+- File operations order: rename → move → tag (DATEV locks after move)
+- `copy_document` does NOT inherit tags — apply separately
+- `/` not allowed in folder names — use `+` as substitute
+- `move_to_folders` doesn't cross collections — use collection add/remove instead
+
+## Bidrento Specifics
+- POST bodies are `application/x-www-form-urlencoded` (not JSON)
+- `list_invoices` returns 404 when empty — client returns `[]`
+- Buildings/units are read-only via API (create in web UI only)
+
+## Error Responses
+Always return structured errors:
+```typescript
+{ error: 'Document not found', code: 'NOT_FOUND', details: { documentId } }
+```
+Never let raw API errors bubble to Claude unhandled.
+
+## Write Operations
+All write tools must:
+- Be logged via audit logger
+- Accept a `reason` parameter for destructive ops (delete, move, rename, split)
+- Return confirmation of what was changed

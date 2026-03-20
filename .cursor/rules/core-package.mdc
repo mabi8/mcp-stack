@@ -1,0 +1,46 @@
+---
+description: Rules for @mcp-stack/core shared library
+globs:
+  - "packages/core/**"
+alwaysApply: false
+---
+
+# @mcp-stack/core
+
+## Role
+Shared infrastructure used by ALL MCP servers. Changes here affect every service.
+Be extra careful — build and test before committing.
+
+## Modules
+
+| Module | Lines | Deps | Purpose |
+|--------|-------|------|---------|
+| `logger.ts` | 190 | zero | Structured JSON on stderr. Levels, child loggers, request ID, secret redaction |
+| `oauth.ts` | 435 | Express types | OAuth 2.1 DCR+PKCE: SessionStore, PendingCodeStore, ClientRegistry, bearer middleware |
+| `cache.ts` | 76 | zero | In-memory TTL cache with prefix invalidation |
+| `tool-helpers.ts` | 136 | MCP SDK | `createToolRegistrar()` — one-liner tool registration with error handling + timing |
+| `audit-logger.ts` | 188 | zero | Write-action audit trail. Buffers locally, flushes via pluggable upload fn |
+
+## Guidelines
+- Zero external runtime deps where possible (logger, cache, audit)
+- Every new utility must have Vitest tests
+- Export everything through `index.ts`
+- Don't add service-specific logic here — this is infrastructure only
+- If a utility is only used by one service, it belongs in that service's package
+
+## Testing
+47 tests across logger, cache, oauth suites:
+```bash
+npm test
+npx vitest run --reporter=verbose
+```
+All tests must pass before any commit to core.
+
+## Logger Usage
+```typescript
+import { createLogger } from '@mcp-stack/core'
+const logger = createLogger('service-name')
+logger.info('message', { key: 'value' })
+logger.child({ requestId: '...' }).debug('scoped log')
+```
+Secret redaction: any value matching token/password/secret/key patterns is auto-redacted in logs.

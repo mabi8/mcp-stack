@@ -1,0 +1,31 @@
+---
+description: Git workflow and collaboration conventions
+alwaysApply: true
+---
+
+# Git & Workflow
+
+## Commit Style
+- Conventional commits: `feat:`, `fix:`, `chore:`, `docs:`, `refactor:`
+- Scope with package name: `feat(centerdevice):`, `fix(core):`, `chore(bidrento):`
+- Short imperative subject (max 72 chars)
+- Body explains WHY, not WHAT
+- One logical change per commit
+
+## Branch Strategy
+- `main` is production — always deployable
+- Feature branches: `feat/short-description`
+- Fix branches: `fix/short-description`
+- No long-lived branches — merge fast, deploy fast
+
+## Pre-commit Checklist
+1. `npm run build` passes (all workspaces)
+2. `npm test` passes (47+ tests)
+3. No `console.log` left — use core logger
+4. `.env` / secrets not staged
+5. TypeScript strict mode clean
+
+## Repo Hygiene
+- `docs/ARCHITECTURE.md` is the source of truth — update when adding services/tools
+- `.env.example` per service package
+- Keep `package-lock.json` committed

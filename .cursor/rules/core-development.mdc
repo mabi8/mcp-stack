@@ -1,0 +1,63 @@
+---
+description: Core development rules for mcp-stack monorepo
+alwaysApply: true
+---
+
+# Core Development Rules
+
+## Project Identity
+- Monorepo: `mcp-stack` — MCP servers + shared infrastructure
+- Owner: Markus Binder
+- Stack: TypeScript / Node.js / ES modules
+- Runtime: Node.js 20+, target ES2022
+- Module system: Node16 (not bundled — runs as Node directly)
+- Test runner: Vitest
+- Package manager: npm workspaces
+
+## Architecture
+See `docs/ARCHITECTURE.md` for the full reference. Key points:
+- `packages/core` — shared lib (`@mcp-stack/core`): logger, OAuth 2.1, cache, tool-helpers, audit
+- `packages/centerdevice` — CenterDevice DMS MCP (46 tools)
+- `packages/bidrento` — Bidrento property management MCP (40 tools)
+- `deploy/` — nginx configs, systemd units, update script
+
+## Build Order
+Core MUST build before service packages:
+```bash
+npm run build -w packages/core
+npm run build -w packages/centerdevice
+npm run build -w packages/bidrento
+```
+
+## TypeScript Standards
+- Strict mode always (enforced via `tsconfig.base.json`)
+- Prefer interfaces over types; avoid enums, use `as const` objects
+- Use named exports (exception: where MCP SDK expects default)
+- Explicit return types on public functions
+- No `any` — use `unknown` + type guards
+- Prefer early returns over nested conditionals
+
+## Style
+- Lowercase-with-dashes for directories (e.g., `packages/centerdevice/`)
+- camelCase for variables/functions, PascalCase for interfaces/classes
+- Meaningful variable names — no abbreviations except `req`, `res`, `ctx`
+- No leftover `console.log` — use `@mcp-stack/core` logger
+
+## Dependencies
+- ALWAYS check `@mcp-stack/core` before adding external deps
+- Core has zero external runtime deps for logger/cache; minimal for OAuth
+- Pin exact versions in package.json
+- Audit before adding: check last publish date, downloads, issues
+
+## Error Handling
+- Every async call gets try/catch
+- Log errors with structured context via core logger
+- Return structured error objects to Claude: `{ error: string, code?: string }`
+- Never throw unhandled — catch and return MCP-compatible errors
+
+## Execution Principles
+- SEARCH FIRST: Check existing codebase for similar patterns
+- REUSE FIRST: Extend `@mcp-stack/core` before creating new utilities
+- MINIMAL CHANGES: Smallest diff that solves the problem
+- VERIFY: `npm run build` and `npm test` must pass
+- ASK, DON'T ASSUME: If requirements are ambiguous, ask
