@@ -23,6 +23,10 @@ npm run build -w packages/core        # Build core first
 npm test                               # Run all tests (47 tests)
 ```
 
+## Documentation
+
+See **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** for the full architecture reference — network layout, authentication flows, tool listings, API quirks, operations runbook, and environment variables.
+
 ## Packages
 
 ### `@mcp-stack/core`
