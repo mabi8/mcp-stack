@@ -1,5 +1,18 @@
 /**
- * CenterDevice MCP Tools — 55 tools
+ * CenterDevice MCP Tools — 48 tools
+ *
+ * Collapsed from 55: batch/single pairs merged into unified tools that accept
+ * one-or-many. The MCP server picks the most efficient CD API strategy internally.
+ *
+ * Collapsed pairs:
+ *   rename_document + batch_rename_documents → rename_documents
+ *   rename_folder + batch_rename_folders     → rename_folders
+ *   delete_document + batch_delete_documents → delete_documents (native bulk API)
+ *   add_tags + batch_add_tags               → add_tags (native bulk API)
+ *   remove_tags + batch_remove_tags         → remove_tags (native bulk API)
+ *   share_document + batch_share_documents  → share_documents (native bulk API)
+ *   create_folder + batch_create_folders    → create_folders
+ *   add_documents_to_folder + batch_move_to_folders → move_to_folders
  *
  * Uses @mcp-stack/core's createToolRegistrar for automatic:
  *   - try/catch + error formatting
@@ -17,21 +30,19 @@ import type { CenterDeviceClient } from "./client.js";
 // ─── Tool Classification ─────────────────────────────────────────────
 
 const WRITE_TOOLS = new Set([
-  "move_documents", "add_documents_to_folder", "rename_document", "delete_document",
-  "add_tags", "remove_tags", "share_document", "upload_document", "upload_text_document",
-  "upload_new_version", "update_text_document", "create_folder", "rename_folder",
+  "move_documents", "move_to_folders", "rename_documents", "delete_documents",
+  "add_tags", "remove_tags", "share_documents", "upload_document", "upload_text_document",
+  "upload_new_version", "update_text_document", "create_folders", "rename_folders",
   "move_folder", "delete_folder", "create_collection", "create_workflow",
   "respond_to_workflow", "delete_workflow", "split_document", "merge_documents",
-  "batch_rename_documents", "batch_rename_folders", "batch_delete_documents",
-  "batch_add_tags", "batch_remove_tags", "batch_share_documents",
-  "batch_move_to_folders", "batch_create_folders", "unshare_document",
-  "copy_document", "remove_documents_from_folder", "remove_documents_from_collection",
-  "add_documents_to_collection", "add_comment", "delete_comment",
+  "unshare_document", "copy_document", "remove_documents_from_folder",
+  "remove_documents_from_collection", "add_documents_to_collection",
+  "add_comment", "delete_comment",
 ]);
 
 const REASON_REQUIRED = new Set([
-  "move_documents", "delete_document", "rename_document", "split_document",
-  "batch_delete_documents", "delete_folder",
+  "move_documents", "delete_documents", "rename_documents", "split_document",
+  "delete_folder",
 ]);
 
 // ─── Registration ────────────────────────────────────────────────────
@@ -94,8 +105,6 @@ export function registerTools(
     (p) => cd.getDocumentFulltext(p.document_id, p.version),
   );
 
-  // ── Composite: Find and Read ───────────────────────────────────────
-
   tool("find_and_read",
     "Search for documents and return their fulltext content in one call.",
     {
@@ -109,7 +118,6 @@ export function registerTools(
       const searchResult = await cd.searchDocuments({
         query: p.query, collection: p.collection, tags: p.tags, rows: max,
       }) as { documents?: { id: string; filename: string }[] };
-
       const docs = searchResult.documents || [];
       const results = await Promise.all(
         docs.slice(0, max).map(async (doc) => {
@@ -205,21 +213,61 @@ export function registerTools(
     },
   );
 
-  tool("create_folder", "Create a new folder in a collection.",
+  // UNIFIED: create_folders (was create_folder + batch_create_folders)
+  tool("create_folders",
+    "Create one or more folders. Parallel execution for multiple.",
     {
-      name: z.string().describe("Folder name"),
-      collection: z.string().optional().describe("Collection ID (required if no parent)"),
-      parent: z.string().optional().describe("Parent folder ID, or 'none' for top-level"),
+      operations: z.array(z.object({
+        name: z.string().describe("Folder name"),
+        collection: z.string().optional().describe("Collection ID (required if no parent)"),
+        parent: z.string().optional().describe("Parent folder ID, or 'none' for top-level"),
+      })).min(1),
     },
-    (p) => cd.createFolder(p),
+    async (p) => {
+      if (p.operations.length === 1) {
+        const result = await cd.createFolder(p.operations[0]);
+        return { total: 1, results: [{ name: p.operations[0].name, status: "ok", result }] };
+      }
+      const results = await Promise.all(
+        p.operations.map(async (f) => {
+          try {
+            const result = await cd.createFolder(f);
+            return { name: f.name, status: "ok", result };
+          } catch (e: unknown) {
+            return { name: f.name, status: "error", error: e instanceof Error ? e.message : String(e) };
+          }
+        }),
+      );
+      return { total: results.length, results };
+    },
   );
 
-  tool("rename_folder", "Rename an existing folder.",
+  // UNIFIED: rename_folders (was rename_folder + batch_rename_folders)
+  tool("rename_folders",
+    "Rename one or more folders. Parallel execution for multiple.",
     {
-      folder_id: z.string().describe("The folder ID"),
-      name: z.string().describe("New folder name"),
+      operations: z.array(z.object({
+        folder_id: z.string().describe("Folder ID"),
+        name: z.string().describe("New folder name"),
+      })).min(1),
     },
-    (p) => cd.renameFolder(p.folder_id, p.name),
+    async (p) => {
+      if (p.operations.length === 1) {
+        await cd.renameFolder(p.operations[0].folder_id, p.operations[0].name);
+        return { total: 1, results: [{ id: p.operations[0].folder_id, status: "ok" }] };
+      }
+      const results = await Promise.all(
+        p.operations.map(async (op) => {
+          try {
+            await cd.renameFolder(op.folder_id, op.name);
+            return { id: op.folder_id, status: "ok" };
+          } catch (e: unknown) {
+            return { id: op.folder_id, status: "error", error: e instanceof Error ? e.message : String(e) };
+          }
+        }),
+      );
+      return { total: results.length, results };
+    },
   );
 
   tool("move_folder", "Move a folder to a different parent or collection.",
@@ -238,17 +286,39 @@ export function registerTools(
 
   // ── Document Operations ────────────────────────────────────────────
 
-  tool("rename_document", "Rename a document (creates new version).",
+  // UNIFIED: rename_documents (was rename_document + batch_rename_documents)
+  tool("rename_documents",
+    "Rename one or more documents (each creates a new version). Parallel execution for multiple.",
     {
-      document_id: z.string().describe("The document ID"),
-      filename: z.string().describe("New filename"),
+      operations: z.array(z.object({
+        document_id: z.string().describe("Document ID"),
+        filename: z.string().describe("New filename"),
+      })).min(1),
     },
-    (p) => cd.renameDocument(p.document_id, p.filename),
+    async (p) => {
+      if (p.operations.length === 1) {
+        await cd.renameDocument(p.operations[0].document_id, p.operations[0].filename);
+        return { total: 1, results: [{ id: p.operations[0].document_id, status: "ok" }] };
+      }
+      const results = await Promise.all(
+        p.operations.map(async (op) => {
+          try {
+            await cd.renameDocument(op.document_id, op.filename);
+            return { id: op.document_id, status: "ok" };
+          } catch (e: unknown) {
+            return { id: op.document_id, status: "error", error: e instanceof Error ? e.message : String(e) };
+          }
+        }),
+      );
+      return { total: results.length, results };
+    },
   );
 
-  tool("delete_document", "Delete a document (moves to trash).",
-    { document_id: z.string().describe("The document ID") },
-    (p) => cd.deleteDocument(p.document_id),
+  // UNIFIED: delete_documents (was delete_document + batch_delete_documents)
+  tool("delete_documents",
+    "Delete one or more documents (move to trash). Uses native bulk API — single HTTP call.",
+    { document_ids: z.array(z.string()).min(1).describe("Document IDs to delete") },
+    (p) => cd.bulkDeleteDocuments(p.document_ids),
   );
 
   tool("copy_document", "Create a copy of a document.",
@@ -278,12 +348,37 @@ export function registerTools(
     }),
   );
 
-  tool("add_documents_to_folder", "Add documents to a folder.",
+  // UNIFIED: move_to_folders (was add_documents_to_folder + batch_move_to_folders)
+  tool("move_to_folders",
+    "Add documents to folders (within same collection). One or more operations, each moves documents into a target folder.",
     {
-      folder_id: z.string().describe("Target folder ID"),
-      documents: z.array(z.string()).describe("Document IDs to add"),
+      operations: z.array(z.object({
+        folder_id: z.string().describe("Target folder ID"),
+        document_ids: z.array(z.string()).min(1).describe("Document IDs to move into this folder"),
+      })).min(1),
     },
-    (p) => cd.addDocumentsToFolder(p.folder_id, p.documents),
+    async (p) => {
+      if (p.operations.length === 1) {
+        await cd.addDocumentsToFolder(p.operations[0].folder_id, p.operations[0].document_ids);
+        return { total: 1, succeeded: 1, failed: 0, results: [{ folder_id: p.operations[0].folder_id, count: p.operations[0].document_ids.length, success: true }] };
+      }
+      const results = await Promise.all(
+        p.operations.map(async (op) => {
+          try {
+            await cd.addDocumentsToFolder(op.folder_id, op.document_ids);
+            return { folder_id: op.folder_id, count: op.document_ids.length, success: true };
+          } catch (e: unknown) {
+            return { folder_id: op.folder_id, count: op.document_ids.length, success: false, error: e instanceof Error ? e.message : String(e) };
+          }
+        }),
+      );
+      return {
+        total: results.length,
+        succeeded: results.filter((r) => r.success).length,
+        failed: results.filter((r) => !r.success).length,
+        results,
+      };
+    },
   );
 
   tool("remove_documents_from_folder", "Remove documents from a folder.",
@@ -350,12 +445,8 @@ export function registerTools(
       const ext = p.filename.split(".").pop()?.toLowerCase() || "";
       const ct = p.content_type || mimeMap[ext] || "text/plain";
       return cd.uploadDocument({
-        filename: p.filename,
-        data: Buffer.from(p.content, "utf-8"),
-        contentType: ct,
-        collections: p.collections,
-        folders: p.folders,
-        tags: p.tags,
+        filename: p.filename, data: Buffer.from(p.content, "utf-8"),
+        contentType: ct, collections: p.collections, folders: p.folders, tags: p.tags,
       });
     },
   );
@@ -394,27 +485,37 @@ export function registerTools(
     },
   );
 
-  // ── Tags ───────────────────────────────────────────────────────────
+  // ── Tags (native bulk API — always single HTTP call) ───────────────
 
-  tool("add_tags", "Add tags to a document.",
-    { document_id: z.string(), tags: z.array(z.string()) },
-    (p) => cd.addTags(p.document_id, p.tags),
-  );
-
-  tool("remove_tags", "Remove tags from a document.",
-    { document_id: z.string(), tags: z.array(z.string()) },
-    (p) => cd.removeTags(p.document_id, p.tags),
-  );
-
-  // ── Sharing ────────────────────────────────────────────────────────
-
-  tool("share_document", "Share a document with users and/or groups.",
+  tool("add_tags",
+    "Add tags to one or more documents. Always uses native bulk API (single HTTP call).",
     {
-      document_id: z.string(),
-      users: z.array(z.string()).optional(),
-      groups: z.array(z.string()).optional(),
+      document_ids: z.array(z.string()).min(1).describe("Document IDs (one or more)"),
+      tags: z.array(z.string()).min(1).describe("Tags to add"),
     },
-    (p) => cd.shareDocument(p.document_id, p.users, p.groups),
+    (p) => cd.bulkAddTags(p.document_ids, p.tags),
+  );
+
+  tool("remove_tags",
+    "Remove tags from one or more documents. Always uses native bulk API (single HTTP call).",
+    {
+      document_ids: z.array(z.string()).min(1).describe("Document IDs (one or more)"),
+      tags: z.array(z.string()).min(1).describe("Tags to remove"),
+    },
+    (p) => cd.bulkRemoveTags(p.document_ids, p.tags),
+  );
+
+  // ── Sharing (native bulk API) ──────────────────────────────────────
+
+  tool("share_documents",
+    "Share one or more documents with users and/or groups. Always uses native bulk API.",
+    {
+      document_ids: z.array(z.string()).min(1).describe("Document IDs (one or more)"),
+      users: z.array(z.string()).optional().describe("User IDs to share with"),
+      groups: z.array(z.string()).optional().describe("Group IDs to share with"),
+      comment: z.string().optional().describe("Comment for recipients"),
+    },
+    (p) => cd.bulkShareDocuments(p.document_ids, p.users, p.groups, p.comment),
   );
 
   tool("unshare_document", "Remove sharing from a document.",
@@ -440,10 +541,7 @@ export function registerTools(
   );
 
   tool("delete_comment", "Delete a comment from a document.",
-    {
-      document_id: z.string(),
-      comment_id: z.string().describe("Comment ID to delete"),
-    },
+    { document_id: z.string(), comment_id: z.string().describe("Comment ID to delete") },
     (p) => cd.deleteComment(p.document_id, p.comment_id),
   );
 
@@ -460,11 +558,7 @@ export function registerTools(
   // ── Workflows ──────────────────────────────────────────────────────
 
   tool("list_workflows", "List workflows (document requests).",
-    {
-      document_id: z.string().optional(),
-      role: z.enum(["creator", "responder"]).optional(),
-      status: z.enum(["started", "completed"]).optional(),
-    },
+    { document_id: z.string().optional(), role: z.enum(["creator", "responder"]).optional(), status: z.enum(["started", "completed"]).optional() },
     (p) => cd.getWorkflows(p),
   );
 
@@ -476,13 +570,10 @@ export function registerTools(
   tool("create_workflow", "Create a workflow (document request).",
     {
       type: z.enum(["read", "approval", "metadata-form"]),
-      document_id: z.string(),
-      document_version: z.number(),
-      users: z.array(z.string()).optional(),
-      groups: z.array(z.string()).optional(),
+      document_id: z.string(), document_version: z.number(),
+      users: z.array(z.string()).optional(), groups: z.array(z.string()).optional(),
       confirmation_mode: z.enum(["one", "all"]).optional(),
-      comment: z.string().optional(),
-      share_document: z.boolean().optional(),
+      comment: z.string().optional(), share_document: z.boolean().optional(),
     },
     (p) => cd.createWorkflow({
       type: p.type, documentId: p.document_id, documentVersion: p.document_version,
@@ -492,12 +583,7 @@ export function registerTools(
   );
 
   tool("respond_to_workflow", "Respond to a workflow.",
-    {
-      workflow_id: z.string(),
-      result: z.enum(["confirmed", "rejected"]),
-      document_version: z.number(),
-      comment: z.string().optional(),
-    },
+    { workflow_id: z.string(), result: z.enum(["confirmed", "rejected"]), document_version: z.number(), comment: z.string().optional() },
     (p) => cd.respondToWorkflow(p.workflow_id, p.result, p.document_version, p.comment),
   );
 
@@ -509,7 +595,7 @@ export function registerTools(
   // ── PDF Operations ─────────────────────────────────────────────────
 
   tool("split_document",
-    "Split a PDF into multiple parts by page ranges. Uploads each part as a new document.",
+    "Split a PDF into multiple parts by page ranges.",
     {
       document_id: z.string().describe("Source PDF document ID"),
       splits: z.array(z.object({
@@ -525,7 +611,7 @@ export function registerTools(
   );
 
   tool("merge_documents",
-    "Merge multiple PDFs into one. Documents are combined in the order given.",
+    "Merge multiple PDFs into one.",
     {
       document_ids: z.array(z.string()).describe("PDF document IDs to merge (in order)"),
       filename: z.string().describe("Filename for merged PDF"),
@@ -544,124 +630,12 @@ export function registerTools(
   );
 
   tool("search_trash", "Search for documents in the trash.",
-    {
-      query: z.string().optional(),
-      extensions: z.array(z.string()).optional(),
-      tags: z.array(z.string()).optional(),
-      offset: z.number().optional(),
-      rows: z.number().optional(),
-    },
+    { query: z.string().optional(), extensions: z.array(z.string()).optional(), tags: z.array(z.string()).optional(), offset: z.number().optional(), rows: z.number().optional() },
     (p) => cd.searchTrash(p),
   );
 
   tool("restore_from_trash", "Restore documents from trash.",
     { documents: z.array(z.string()).describe("Document IDs to restore") },
     (p) => cd.restoreFromTrash(p.documents),
-  );
-
-  // ── Batch Operations ───────────────────────────────────────────────
-
-  tool("batch_rename_documents", "Rename multiple documents in one call.",
-    {
-      operations: z.array(z.object({
-        document_id: z.string(),
-        filename: z.string(),
-      })),
-    },
-    async (p) => {
-      const results = await Promise.all(
-        p.operations.map(async (op) => {
-          try {
-            await cd.renameDocument(op.document_id, op.filename);
-            return { id: op.document_id, status: "ok" };
-          } catch (e: unknown) {
-            return { id: op.document_id, status: "error", error: e instanceof Error ? e.message : String(e) };
-          }
-        }),
-      );
-      return { total: results.length, results };
-    },
-  );
-
-  tool("batch_rename_folders", "Rename multiple folders in one call.",
-    { operations: z.array(z.object({ folder_id: z.string(), name: z.string() })) },
-    async (p) => {
-      const results = await Promise.all(
-        p.operations.map(async (op) => {
-          try {
-            await cd.renameFolder(op.folder_id, op.name);
-            return { id: op.folder_id, status: "ok" };
-          } catch (e: unknown) {
-            return { id: op.folder_id, status: "error", error: e instanceof Error ? e.message : String(e) };
-          }
-        }),
-      );
-      return { total: results.length, results };
-    },
-  );
-
-  tool("batch_delete_documents", "Delete multiple documents (move to trash).",
-    { document_ids: z.array(z.string()) },
-    (p) => cd.bulkDeleteDocuments(p.document_ids),
-  );
-
-  tool("batch_add_tags", "Add tags to multiple documents.",
-    { document_ids: z.array(z.string()), tags: z.array(z.string()) },
-    (p) => cd.bulkAddTags(p.document_ids, p.tags),
-  );
-
-  tool("batch_remove_tags", "Remove tags from multiple documents.",
-    { document_ids: z.array(z.string()), tags: z.array(z.string()) },
-    (p) => cd.bulkRemoveTags(p.document_ids, p.tags),
-  );
-
-  tool("batch_share_documents", "Share multiple documents.",
-    {
-      document_ids: z.array(z.string()),
-      users: z.array(z.string()).optional(),
-      groups: z.array(z.string()).optional(),
-      comment: z.string().optional(),
-    },
-    (p) => cd.bulkShareDocuments(p.document_ids, p.users, p.groups, p.comment),
-  );
-
-  tool("batch_move_to_folders", "Move documents to multiple different folders.",
-    { operations: z.array(z.object({ document_id: z.string(), folder_id: z.string() })) },
-    async (p) => {
-      const results = await Promise.all(
-        p.operations.map(async (op) => {
-          try {
-            await cd.addDocumentsToFolder(op.folder_id, [op.document_id]);
-            return { id: op.document_id, folder: op.folder_id, status: "ok" };
-          } catch (e: unknown) {
-            return { id: op.document_id, folder: op.folder_id, status: "error", error: e instanceof Error ? e.message : String(e) };
-          }
-        }),
-      );
-      return { total: results.length, results };
-    },
-  );
-
-  tool("batch_create_folders", "Create multiple folders in one call.",
-    {
-      folders: z.array(z.object({
-        name: z.string(),
-        collection: z.string().optional(),
-        parent: z.string().optional(),
-      })),
-    },
-    async (p) => {
-      const results = await Promise.all(
-        p.folders.map(async (f) => {
-          try {
-            const result = await cd.createFolder(f);
-            return { name: f.name, status: "ok", result };
-          } catch (e: unknown) {
-            return { name: f.name, status: "error", error: e instanceof Error ? e.message : String(e) };
-          }
-        }),
-      );
-      return { total: results.length, results };
-    },
   );
 }
