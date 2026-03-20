@@ -263,10 +263,16 @@ function getOrCreateContext(session: OAuthSession): UserMcpContext {
     return existing;
   }
 
+  // Guard: old sessions from pre-refactor cd-mcp may lack session.data
+  const data = session.data || (session as any);
+  if (!data.cdAccessToken) {
+    throw new Error("Session missing CenterDevice tokens — user must reconnect");
+  }
+
   const tokens: CDTokens = {
-    access_token: session.data.cdAccessToken as string,
-    refresh_token: session.data.cdRefreshToken as string,
-    expires_at: session.data.cdExpiresAt as number,
+    access_token: data.cdAccessToken as string,
+    refresh_token: data.cdRefreshToken as string,
+    expires_at: data.cdExpiresAt as number,
   };
   const cdClient = new CenterDeviceClient(cdConfig, tokens);
 
@@ -327,7 +333,19 @@ setInterval(async () => {
 
 app.post("/mcp", bearerAuth(sessions, SERVER_ORIGIN), async (req, res) => {
   const session = (req as any).oauthSession as OAuthSession;
-  const ctx = getOrCreateContext(session);
+
+  let ctx: UserMcpContext;
+  try {
+    ctx = getOrCreateContext(session);
+  } catch (e: unknown) {
+    // Invalid session (e.g., old format missing CD tokens) — force re-auth
+    log.warn("mcp_invalid_session", { error: e instanceof Error ? e.message : String(e) });
+    sessions.delete(session.mcpToken);
+    res.status(401)
+      .set("WWW-Authenticate", `Bearer resource_metadata="${SERVER_ORIGIN}/.well-known/oauth-protected-resource"`)
+      .json({ error: "invalid_token", error_description: "Session expired — please reconnect" });
+    return;
+  }
 
   const server = new McpServer({ name: "centerdevice", version: "1.0.0" });
   registerTools(server, ctx.cdClient, log, ctx.audit);
