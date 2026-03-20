@@ -1,0 +1,27 @@
+node_modules/
+dist/
+*.js
+*.d.ts
+*.js.map
+!vitest.config.ts
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+.sessions.json
+.tokens.json
+
+# Logs
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Lock files (regenerated on install)
+package-lock.json

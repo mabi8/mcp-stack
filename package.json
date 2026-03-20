@@ -1,0 +1,21 @@
+{
+  "name": "mcp-stack",
+  "private": true,
+  "workspaces": [
+    "packages/core",
+    "packages/centerdevice",
+    "packages/bidrento"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit --workspaces",
+    "clean": "rm -rf packages/*/dist"
+  },
+  "devDependencies": {
+    "vitest": "^3.1.0",
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0"
+  }
+}

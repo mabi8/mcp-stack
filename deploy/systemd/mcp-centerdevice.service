@@ -1,0 +1,24 @@
+[Unit]
+Description=CenterDevice MCP Server
+After=network.target
+
+[Service]
+Type=simple
+User=cdapi
+Group=cdapi
+WorkingDirectory=/home/cdapi/cd-mcp
+ExecStart=/usr/bin/node dist/index.js
+Restart=on-failure
+RestartSec=5
+Environment=NODE_ENV=production
+Environment=LOG_LEVEL=info
+
+# Security hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=no
+ReadWritePaths=/home/cdapi/cd-mcp
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target
