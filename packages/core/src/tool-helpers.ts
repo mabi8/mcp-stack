@@ -26,10 +26,12 @@ import type { AuditLogger } from "./audit-logger.js";
 
 // ─── Types ───────────────────────────────────────────────────────────
 
-/** The user-supplied handler: takes params, returns any JSON-serializable value. */
-export type ToolHandler<P = Record<string, unknown>> = (
-  params: P,
-) => Promise<unknown> | unknown;
+/**
+ * The user-supplied handler: takes zod-validated params, returns any JSON-serializable value.
+ * Params are typed as `any` because zod validates them at the SDK level before the handler runs.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type ToolHandler = (params: any) => Promise<unknown> | unknown;
 
 export interface ToolRegistrarOptions {
   logger: Logger;
