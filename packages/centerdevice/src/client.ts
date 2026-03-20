@@ -1132,15 +1132,29 @@ export class CenterDeviceClient {
     collections?: string[];
     folders?: string[];
     tags?: string[];
-  }): Promise<{ results: { filename: string; documentId: string; pages: string }[]; originalDeleted: boolean }> {
+  }): Promise<{ results: { filename: string; documentId: string; pages: string }[]; originalDeleted: boolean; inheritedTags: string[] }> {
     const { PDFDocument } = await import("pdf-lib");
 
-    // 1. Download the original PDF
-    const { data, filename: origFilename } = await this.downloadDocument(params.documentId);
+    // 1. Fetch source document metadata to inherit tags
+    const sourceMeta = await this.getDocumentMetadata(params.documentId) as {
+      tags?: string[];
+      collections?: { id: string }[];
+    };
+    const sourceTags = sourceMeta.tags || [];
+
+    // Merge: source tags + caller-provided tags (deduplicated)
+    const allTags = [...new Set([...sourceTags, ...(params.tags || [])])];
+
+    // If no collections specified, inherit from source
+    const collections = params.collections ||
+      (sourceMeta.collections?.map(c => c.id) || []);
+
+    // 2. Download the original PDF
+    const { data } = await this.downloadDocument(params.documentId);
     const srcDoc = await PDFDocument.load(data);
     const totalPages = srcDoc.getPageCount();
 
-    // Extract metadata from original
+    // Extract PDF-internal metadata from original
     const title = srcDoc.getTitle();
     const author = srcDoc.getAuthor();
     const subject = srcDoc.getSubject();
@@ -1152,7 +1166,7 @@ export class CenterDeviceClient {
 
     const results: { filename: string; documentId: string; pages: string }[] = [];
 
-    // 2. For each split, create a new PDF
+    // 3. For each split, create a new PDF
     for (const split of params.splits) {
       const pageIndices = this.parsePageRanges(split.pages, totalPages);
       const newDoc = await PDFDocument.create();
@@ -1163,7 +1177,7 @@ export class CenterDeviceClient {
         newDoc.addPage(page);
       }
 
-      // Copy metadata from original
+      // Copy PDF-internal metadata from original
       if (title) newDoc.setTitle(title);
       if (author) newDoc.setAuthor(author);
       if (subject) newDoc.setSubject(subject);
@@ -1176,28 +1190,28 @@ export class CenterDeviceClient {
       const pdfBytes = await newDoc.save();
       const pdfBuffer = Buffer.from(pdfBytes);
 
-      // 3. Upload to CenterDevice
+      // 4. Upload to CenterDevice with inherited tags + collections
       const uploadResult = await this.uploadDocument({
         filename: split.filename,
         data: pdfBuffer,
         contentType: "application/pdf",
-        collections: params.collections,
+        collections,
         folders: params.folders,
-        tags: params.tags,
+        tags: allTags.length > 0 ? allTags : undefined,
       }) as { id?: string; location?: string };
 
       const docId = uploadResult.id || uploadResult.location?.split("/").pop() || "unknown";
       results.push({ filename: split.filename, documentId: docId, pages: split.pages });
     }
 
-    // 4. Optionally delete original
+    // 5. Optionally delete original
     let originalDeleted = false;
     if (params.deleteOriginal) {
       await this.deleteDocument(params.documentId);
       originalDeleted = true;
     }
 
-    return { results, originalDeleted };
+    return { results, originalDeleted, inheritedTags: sourceTags };
   }
 
   // ─── Merge Documents ───────────────────────────────────────────────
@@ -1208,18 +1222,34 @@ export class CenterDeviceClient {
     collections?: string[];
     folders?: string[];
     tags?: string[];
-  }): Promise<{ filename: string; documentId: string; pageCount: number }> {
+  }): Promise<{ filename: string; documentId: string; pageCount: number; inheritedTags: string[] }> {
     const { PDFDocument } = await import("pdf-lib");
 
-    // 1. Download all PDFs
+    // 1. Fetch metadata from all source documents to inherit tags
+    const allSourceMeta = await Promise.all(
+      params.documentIds.map(id => this.getDocumentMetadata(id) as Promise<{
+        tags?: string[];
+        collections?: { id: string }[];
+      }>)
+    );
+
+    // Collect all tags from all source docs + caller-provided (deduplicated)
+    const sourceTags = allSourceMeta.flatMap(m => m.tags || []);
+    const allTags = [...new Set([...sourceTags, ...(params.tags || [])])];
+
+    // If no collections specified, inherit from first source doc
+    const collections = params.collections ||
+      (allSourceMeta[0]?.collections?.map(c => c.id) || []);
+
+    // 2. Download all PDFs
     const downloads = await Promise.all(
       params.documentIds.map(id => this.downloadDocument(id))
     );
 
-    // 2. Create merged document
+    // 3. Create merged document
     const mergedDoc = await PDFDocument.create();
 
-    // Copy metadata from the first document
+    // Copy PDF-internal metadata from the first document
     const firstDoc = await PDFDocument.load(downloads[0].data);
     const title = firstDoc.getTitle();
     const author = firstDoc.getAuthor();
@@ -1239,7 +1269,7 @@ export class CenterDeviceClient {
     if (creationDate) mergedDoc.setCreationDate(creationDate);
     if (modificationDate) mergedDoc.setModificationDate(modificationDate);
 
-    // 3. Copy all pages from each document in order
+    // 4. Copy all pages from each document in order
     for (const download of downloads) {
       const srcDoc = await PDFDocument.load(download.data);
       const indices = Array.from({ length: srcDoc.getPageCount() }, (_, i) => i);
@@ -1252,14 +1282,14 @@ export class CenterDeviceClient {
     const pdfBytes = await mergedDoc.save();
     const pdfBuffer = Buffer.from(pdfBytes);
 
-    // 4. Upload merged PDF
+    // 5. Upload merged PDF with inherited tags + collections
     const uploadResult = await this.uploadDocument({
       filename: params.filename,
       data: pdfBuffer,
       contentType: "application/pdf",
-      collections: params.collections,
+      collections,
       folders: params.folders,
-      tags: params.tags,
+      tags: allTags.length > 0 ? allTags : undefined,
     }) as { id?: string; location?: string };
 
     const docId = uploadResult.id || uploadResult.location?.split("/").pop() || "unknown";
@@ -1268,6 +1298,7 @@ export class CenterDeviceClient {
       filename: params.filename,
       documentId: docId,
       pageCount: mergedDoc.getPageCount(),
+      inheritedTags: sourceTags,
     };
   }
 
