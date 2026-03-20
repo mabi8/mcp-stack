@@ -316,9 +316,16 @@ export function registerTools(
 
   // UNIFIED: delete_documents (was delete_document + batch_delete_documents)
   tool("delete_documents",
-    "Delete one or more documents (move to trash). Uses native bulk API — single HTTP call.",
-    { document_ids: z.array(z.string()).min(1).describe("Document IDs to delete") },
-    (p) => cd.bulkDeleteDocuments(p.document_ids),
+    "Delete one or more documents (move to trash). Uses native bulk API — single HTTP call. Accepts document_ids (array) or document_id (single string).",
+    {
+      document_ids: z.array(z.string()).optional().describe("Document IDs to delete"),
+      document_id: z.string().optional().describe("Single document ID (backward compat)"),
+    },
+    (p) => {
+      const ids = p.document_ids || (p.document_id ? [p.document_id] : []);
+      if (ids.length === 0) throw new Error("Provide document_ids (array) or document_id (string)");
+      return cd.bulkDeleteDocuments(ids);
+    },
   );
 
   tool("copy_document", "Create a copy of a document.",
@@ -488,34 +495,49 @@ export function registerTools(
   // ── Tags (native bulk API — always single HTTP call) ───────────────
 
   tool("add_tags",
-    "Add tags to one or more documents. Always uses native bulk API (single HTTP call).",
+    "Add tags to one or more documents. Always uses native bulk API (single HTTP call). Accepts document_ids (array) or document_id (single string) for backward compatibility.",
     {
-      document_ids: z.array(z.string()).min(1).describe("Document IDs (one or more)"),
+      document_ids: z.array(z.string()).optional().describe("Document IDs (one or more)"),
+      document_id: z.string().optional().describe("Single document ID (backward compat — prefer document_ids)"),
       tags: z.array(z.string()).min(1).describe("Tags to add"),
     },
-    (p) => cd.bulkAddTags(p.document_ids, p.tags),
+    (p) => {
+      const ids = p.document_ids || (p.document_id ? [p.document_id] : []);
+      if (ids.length === 0) throw new Error("Provide document_ids (array) or document_id (string)");
+      return cd.bulkAddTags(ids, p.tags);
+    },
   );
 
   tool("remove_tags",
-    "Remove tags from one or more documents. Always uses native bulk API (single HTTP call).",
+    "Remove tags from one or more documents. Always uses native bulk API (single HTTP call). Accepts document_ids (array) or document_id (single string) for backward compatibility.",
     {
-      document_ids: z.array(z.string()).min(1).describe("Document IDs (one or more)"),
+      document_ids: z.array(z.string()).optional().describe("Document IDs (one or more)"),
+      document_id: z.string().optional().describe("Single document ID (backward compat — prefer document_ids)"),
       tags: z.array(z.string()).min(1).describe("Tags to remove"),
     },
-    (p) => cd.bulkRemoveTags(p.document_ids, p.tags),
+    (p) => {
+      const ids = p.document_ids || (p.document_id ? [p.document_id] : []);
+      if (ids.length === 0) throw new Error("Provide document_ids (array) or document_id (string)");
+      return cd.bulkRemoveTags(ids, p.tags);
+    },
   );
 
   // ── Sharing (native bulk API) ──────────────────────────────────────
 
   tool("share_documents",
-    "Share one or more documents with users and/or groups. Always uses native bulk API.",
+    "Share one or more documents with users and/or groups. Always uses native bulk API. Accepts document_ids (array) or document_id (single string).",
     {
-      document_ids: z.array(z.string()).min(1).describe("Document IDs (one or more)"),
+      document_ids: z.array(z.string()).optional().describe("Document IDs (one or more)"),
+      document_id: z.string().optional().describe("Single document ID (backward compat — prefer document_ids)"),
       users: z.array(z.string()).optional().describe("User IDs to share with"),
       groups: z.array(z.string()).optional().describe("Group IDs to share with"),
       comment: z.string().optional().describe("Comment for recipients"),
     },
-    (p) => cd.bulkShareDocuments(p.document_ids, p.users, p.groups, p.comment),
+    (p) => {
+      const ids = p.document_ids || (p.document_id ? [p.document_id] : []);
+      if (ids.length === 0) throw new Error("Provide document_ids (array) or document_id (string)");
+      return cd.bulkShareDocuments(ids, p.users, p.groups, p.comment);
+    },
   );
 
   tool("unshare_document", "Remove sharing from a document.",
