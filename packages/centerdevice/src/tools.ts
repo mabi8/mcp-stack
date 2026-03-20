@@ -38,11 +38,18 @@ const WRITE_TOOLS = new Set([
   "unshare_document", "copy_document", "remove_documents_from_folder",
   "remove_documents_from_collection", "add_documents_to_collection",
   "add_comment", "delete_comment",
+  // Compat aliases (remove ~2026-04-20)
+  "delete_document", "rename_document", "rename_folder", "create_folder",
+  "share_document", "add_documents_to_folder", "batch_add_tags", "batch_remove_tags",
+  "batch_delete_documents", "batch_rename_documents", "batch_rename_folders",
+  "batch_share_documents", "batch_create_folders", "batch_move_to_folders",
 ]);
 
 const REASON_REQUIRED = new Set([
   "move_documents", "delete_documents", "rename_documents", "split_document",
   "delete_folder",
+  // Compat aliases
+  "delete_document", "rename_document", "batch_delete_documents",
 ]);
 
 // ─── Registration ────────────────────────────────────────────────────
@@ -668,5 +675,201 @@ export function registerTools(
   tool("restore_from_trash", "Restore documents from trash.",
     { documents: z.array(z.string()).describe("Document IDs to restore") },
     (p) => cd.restoreFromTrash(p.documents),
+  );
+
+  // ══════════════════════════════════════════════════════════════════
+  // Backward-compatibility aliases
+  //
+  // Old sessions have cached tool manifests with the pre-collapse names.
+  // These thin wrappers delegate to the unified tools so old sessions
+  // keep working. Remove these after all active sessions have cycled
+  // (safe to remove after ~1 month, around 2026-04-20).
+  // ══════════════════════════════════════════════════════════════════
+
+  // delete_document → delete_documents
+  tool("delete_document", "[Compat] Delete a document — use delete_documents instead.",
+    { document_id: z.string().describe("The document ID") },
+    (p) => cd.bulkDeleteDocuments([p.document_id]),
+  );
+
+  // rename_document → rename_documents
+  tool("rename_document", "[Compat] Rename a document — use rename_documents instead.",
+    {
+      document_id: z.string().describe("The document ID"),
+      filename: z.string().describe("New filename"),
+    },
+    (p) => cd.renameDocument(p.document_id, p.filename),
+  );
+
+  // rename_folder → rename_folders
+  tool("rename_folder", "[Compat] Rename a folder — use rename_folders instead.",
+    {
+      folder_id: z.string().describe("The folder ID"),
+      name: z.string().describe("New folder name"),
+    },
+    (p) => cd.renameFolder(p.folder_id, p.name),
+  );
+
+  // create_folder → create_folders
+  tool("create_folder", "[Compat] Create a folder — use create_folders instead.",
+    {
+      name: z.string().describe("Folder name"),
+      collection: z.string().optional().describe("Collection ID"),
+      parent: z.string().optional().describe("Parent folder ID, or 'none' for top-level"),
+    },
+    (p) => cd.createFolder(p),
+  );
+
+  // share_document → share_documents
+  tool("share_document", "[Compat] Share a document — use share_documents instead.",
+    {
+      document_id: z.string().describe("The document ID"),
+      users: z.array(z.string()).optional(),
+      groups: z.array(z.string()).optional(),
+    },
+    (p) => cd.bulkShareDocuments([p.document_id], p.users, p.groups),
+  );
+
+  // add_documents_to_folder → move_to_folders
+  tool("add_documents_to_folder", "[Compat] Add docs to folder — use move_to_folders instead.",
+    {
+      folder_id: z.string().describe("Target folder ID"),
+      documents: z.array(z.string()).describe("Document IDs to add"),
+    },
+    (p) => cd.addDocumentsToFolder(p.folder_id, p.documents),
+  );
+
+  // batch_add_tags → add_tags
+  tool("batch_add_tags", "[Compat] Bulk add tags — use add_tags instead.",
+    {
+      document_ids: z.array(z.string()).min(1),
+      tags: z.array(z.string()).min(1),
+    },
+    (p) => cd.bulkAddTags(p.document_ids, p.tags),
+  );
+
+  // batch_remove_tags → remove_tags
+  tool("batch_remove_tags", "[Compat] Bulk remove tags — use remove_tags instead.",
+    {
+      document_ids: z.array(z.string()).min(1),
+      tags: z.array(z.string()).min(1),
+    },
+    (p) => cd.bulkRemoveTags(p.document_ids, p.tags),
+  );
+
+  // batch_delete_documents → delete_documents
+  tool("batch_delete_documents", "[Compat] Bulk delete — use delete_documents instead.",
+    { document_ids: z.array(z.string()).min(1) },
+    (p) => cd.bulkDeleteDocuments(p.document_ids),
+  );
+
+  // batch_rename_documents → rename_documents
+  tool("batch_rename_documents", "[Compat] Bulk rename — use rename_documents instead.",
+    {
+      operations: z.array(z.object({
+        document_id: z.string(),
+        filename: z.string(),
+      })),
+    },
+    async (p) => {
+      const results = await Promise.all(
+        p.operations.map(async (op: { document_id: string; filename: string }) => {
+          try {
+            await cd.renameDocument(op.document_id, op.filename);
+            return { id: op.document_id, status: "ok" };
+          } catch (e: unknown) {
+            return { id: op.document_id, status: "error", error: e instanceof Error ? e.message : String(e) };
+          }
+        }),
+      );
+      return { total: results.length, results };
+    },
+  );
+
+  // batch_rename_folders → rename_folders
+  tool("batch_rename_folders", "[Compat] Bulk rename folders — use rename_folders instead.",
+    {
+      operations: z.array(z.object({
+        folder_id: z.string(),
+        name: z.string(),
+      })),
+    },
+    async (p) => {
+      const results = await Promise.all(
+        p.operations.map(async (op: { folder_id: string; name: string }) => {
+          try {
+            await cd.renameFolder(op.folder_id, op.name);
+            return { id: op.folder_id, status: "ok" };
+          } catch (e: unknown) {
+            return { id: op.folder_id, status: "error", error: e instanceof Error ? e.message : String(e) };
+          }
+        }),
+      );
+      return { total: results.length, results };
+    },
+  );
+
+  // batch_share_documents → share_documents
+  tool("batch_share_documents", "[Compat] Bulk share — use share_documents instead.",
+    {
+      document_ids: z.array(z.string()).min(1),
+      users: z.array(z.string()).optional(),
+      groups: z.array(z.string()).optional(),
+      comment: z.string().optional(),
+    },
+    (p) => cd.bulkShareDocuments(p.document_ids, p.users, p.groups, p.comment),
+  );
+
+  // batch_create_folders → create_folders
+  tool("batch_create_folders", "[Compat] Bulk create folders — use create_folders instead.",
+    {
+      folders: z.array(z.object({
+        name: z.string(),
+        collection: z.string().optional(),
+        parent: z.string().optional(),
+      })),
+    },
+    async (p) => {
+      const results = await Promise.all(
+        p.folders.map(async (f: { name: string; collection?: string; parent?: string }) => {
+          try {
+            const result = await cd.createFolder(f);
+            return { name: f.name, status: "ok", result };
+          } catch (e: unknown) {
+            return { name: f.name, status: "error", error: e instanceof Error ? e.message : String(e) };
+          }
+        }),
+      );
+      return { total: results.length, results };
+    },
+  );
+
+  // batch_move_to_folders → move_to_folders
+  tool("batch_move_to_folders", "[Compat] Bulk move to folders — use move_to_folders instead.",
+    {
+      operations: z.array(z.object({
+        document_id: z.string(),
+        folder_id: z.string(),
+      })),
+    },
+    async (p) => {
+      const results = await Promise.all(
+        p.operations.map(async (op: { document_id: string; folder_id: string }) => {
+          try {
+            await cd.addDocumentsToFolder(op.folder_id, [op.document_id]);
+            return { id: op.document_id, folder: op.folder_id, status: "ok" };
+          } catch (e: unknown) {
+            return { id: op.document_id, folder: op.folder_id, status: "error", error: e instanceof Error ? e.message : String(e) };
+          }
+        }),
+      );
+      return { total: results.length, results };
+    },
+  );
+
+  // list_trash → search_trash (no params)
+  tool("list_trash", "[Compat] List trash — use search_trash instead.",
+    { offset: z.number().optional(), rows: z.number().optional() },
+    (p) => cd.searchTrash({ offset: p.offset, rows: p.rows }),
   );
 }
