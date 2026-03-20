@@ -1,5 +1,5 @@
 /**
- * CenterDevice MCP Tools — 48 tools
+ * CenterDevice MCP Tools — 46 tools
  *
  * Collapsed from 55: batch/single pairs merged into unified tools that accept
  * one-or-many. The MCP server picks the most efficient CD API strategy internally.
@@ -623,13 +623,9 @@ export function registerTools(
   );
 
   // ── Trash ──────────────────────────────────────────────────────────
+  // list_trash removed — search_trash with no params does the same thing
 
-  tool("list_trash", "List documents in the trash.",
-    { offset: z.number().optional(), rows: z.number().optional() },
-    (p) => cd.listTrash(p.offset, p.rows),
-  );
-
-  tool("search_trash", "Search for documents in the trash.",
+  tool("search_trash", "Search or list documents in the trash. All params optional — omit all to list everything.",
     { query: z.string().optional(), extensions: z.array(z.string()).optional(), tags: z.array(z.string()).optional(), offset: z.number().optional(), rows: z.number().optional() },
     (p) => cd.searchTrash(p),
   );
