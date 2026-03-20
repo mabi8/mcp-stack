@@ -1,13 +1,18 @@
 [Unit]
-Description=Bidrento MCP Server
+Description=Bidrento MCP Server (@mcp-stack/bidrento)
 After=network.target
 
 [Service]
 Type=simple
 User=bdroapi
 Group=bdroapi
-WorkingDirectory=/home/bdroapi/bidrento-mcp
+
+# WorkingDirectory = package dir (where .env and .sessions.json live)
+WorkingDirectory=/home/bdroapi/mcp-stack/packages/bidrento
+
+# node resolves @mcp-stack/core via workspace symlinks from monorepo root
 ExecStart=/usr/bin/node dist/index.js
+
 Restart=on-failure
 RestartSec=5
 Environment=NODE_ENV=production
@@ -17,7 +22,7 @@ Environment=LOG_LEVEL=info
 NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=no
-ReadWritePaths=/home/bdroapi/bidrento-mcp
+ReadWritePaths=/home/bdroapi/mcp-stack
 PrivateTmp=yes
 
 [Install]
