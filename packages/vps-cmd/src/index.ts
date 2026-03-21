@@ -30,6 +30,7 @@ import {
   ClientRegistry,
   AuditLogger,
   isAllowedRedirectUri,
+  escapeHtml,
   verifyPKCE,
   createDiscoveryHandlers,
   createDCRHandler,
@@ -56,6 +57,7 @@ const SERVER_ORIGIN = process.env.SERVER_ORIGIN || `https://sss.makkib.com`;
 const SSH_KEY_PATH = process.env.SSH_KEY_PATH || resolve("/home/ops/.ssh/id_ed25519");
 const AUDIT_LOG_DIR = process.env.AUDIT_LOG_DIR || resolve(__dirname, "..", "logs");
 const RATE_LIMIT_PER_MIN = parseInt(process.env.RATE_LIMIT_PER_MIN || "10", 10);
+const AUTH_PASSPHRASE = process.env.AUTH_PASSPHRASE || "";
 const ALLOWED_REDIRECT_DOMAINS = ["claude.ai", "claude.com"];
 
 // ─── Shared Infrastructure ──────────────────────────────────────────
@@ -102,9 +104,8 @@ app.post("/oauth/register", createDCRHandler({
   logger: log,
 }));
 
-// ─── Authorization (auto-approve — no upstream service) ─────────────
-// This MCP IS the service. No user login needed. Claude authenticates
-// via the OAuth flow, and the tier engine provides access control.
+// ─── Authorization (passphrase-gated) ────────────────────────────────
+// Shows a login form. User enters the passphrase from .env once,
 
 app.get("/oauth/authorize", (req, res) => {
   const { client_id, redirect_uri, state, response_type, code_challenge, code_challenge_method } = req.query;
@@ -127,22 +128,95 @@ app.get("/oauth/authorize", (req, res) => {
     return;
   }
 
-  // Auto-approve: create code immediately and redirect back
+  if (!AUTH_PASSPHRASE) {
+    log.error("auth_no_passphrase", { detail: "AUTH_PASSPHRASE not set in .env — rejecting all authorize requests" });
+    res.status(503).type("html").send(`<!DOCTYPE html><html><body>
+<h2>MCP not configured</h2><p>AUTH_PASSPHRASE not set. Contact the server admin.</p></body></html>`);
+    return;
+  }
+
+  // Build hidden fields to preserve OAuth params across the POST
+  const hiddenFields = [
+    ["client_id", client_id],
+    ["redirect_uri", redirect_uri],
+    ["state", state || ""],
+    ["response_type", response_type],
+    ["code_challenge", code_challenge || ""],
+    ["code_challenge_method", code_challenge_method || ""],
+  ].map(([k, v]) => `<input type="hidden" name="${k}" value="${escapeHtml(String(v))}">`).join("\n      ");
+
+  const error = req.query.auth_error ? `<p style="color:#e74c3c;margin-bottom:16px;">Invalid passphrase. Try again.</p>` : "";
+
+  res.type("html").send(`<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>VPS Command MCP — Authorize</title>
+<style>
+  body{font-family:-apple-system,system-ui,sans-serif;display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0;background:#0f172a;color:#e2e8f0}
+  .card{background:#1e293b;border-radius:12px;padding:32px;max-width:380px;width:100%;box-shadow:0 4px 24px rgba(0,0,0,.4)}
+  h2{margin:0 0 8px;font-size:20px;color:#f8fafc}
+  p.sub{margin:0 0 24px;font-size:14px;color:#94a3b8}
+  input[type=password]{width:100%;padding:10px 12px;border:1px solid #334155;border-radius:8px;background:#0f172a;color:#f8fafc;font-size:16px;box-sizing:border-box;margin-bottom:16px}
+  input[type=password]:focus{outline:none;border-color:#3b82f6}
+  button{width:100%;padding:10px;border:none;border-radius:8px;background:#3b82f6;color:#fff;font-size:16px;cursor:pointer;font-weight:500}
+  button:hover{background:#2563eb}
+</style></head><body>
+<div class="card">
+  <h2>VPS Command MCP</h2>
+  <p class="sub">Enter passphrase to authorize this connection.</p>
+  ${error}
+  <form method="POST" action="/oauth/authorize">
+    ${hiddenFields}
+    <input type="password" name="passphrase" placeholder="Passphrase" autofocus required>
+    <button type="submit">Authorize</button>
+  </form>
+</div></body></html>`);
+});
+
+app.post("/oauth/authorize", (req, res) => {
+  const { client_id, redirect_uri, state, code_challenge, code_challenge_method, passphrase } = req.body;
+
+  // Timing-safe comparison to prevent timing attacks
+  const expected = Buffer.from(AUTH_PASSPHRASE);
+  const provided = Buffer.from(String(passphrase || ""));
+
+  const valid = expected.length === provided.length && crypto.timingSafeEqual(expected, provided);
+
+  if (!valid) {
+    log.warn("auth_passphrase_rejected", { clientId: client_id, ip: req.ip });
+    // Redirect back to GET with error flag
+    const retryUrl = new URL(`${SERVER_ORIGIN}/oauth/authorize`);
+    retryUrl.searchParams.set("client_id", client_id);
+    retryUrl.searchParams.set("redirect_uri", redirect_uri);
+    retryUrl.searchParams.set("state", state || "");
+    retryUrl.searchParams.set("response_type", "code");
+    if (code_challenge) retryUrl.searchParams.set("code_challenge", code_challenge);
+    if (code_challenge_method) retryUrl.searchParams.set("code_challenge_method", code_challenge_method);
+    retryUrl.searchParams.set("auth_error", "1");
+    res.redirect(302, retryUrl.toString());
+    return;
+  }
+
+  const client = clients.get(client_id as string);
+  if (!client) {
+    res.status(400).json({ error: "invalid_client" });
+    return;
+  }
+
   const mcpCode = pendingCodes.create({
     clientId: client_id as string,
-    codeChallenge: (code_challenge as string) || undefined,
-    codeChallengeMethod: (code_challenge_method as string) || undefined,
+    codeChallenge: code_challenge || undefined,
+    codeChallengeMethod: code_challenge_method || undefined,
     data: {
       authorizedAt: Date.now(),
       clientIp: req.ip,
     },
   });
 
-  const callback = new URL(redirectUri);
+  const callback = new URL(redirect_uri);
   callback.searchParams.set("code", mcpCode);
-  if (state) callback.searchParams.set("state", state as string);
+  if (state) callback.searchParams.set("state", state);
 
-  log.info("oauth_auto_approved", { clientId: client_id });
+  log.info("oauth_passphrase_approved", { clientId: client_id, ip: req.ip });
   res.redirect(302, callback.toString());
 });
 
