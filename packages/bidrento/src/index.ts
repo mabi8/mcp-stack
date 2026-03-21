@@ -21,6 +21,8 @@ import { config as loadEnv } from "dotenv";
 
 import {
   createLogger,
+  Cache,
+  TTL,
   SessionStore,
   PendingCodeStore,
   ClientRegistry,
@@ -152,8 +154,27 @@ app.post("/oauth/token", createTokenHandler({
 
 // ─── Health ─────────────────────────────────────────────────────────
 
-app.get("/health", (_req, res) => {
-  res.json({ status: "ok", service: "mcp-bidrento", sessions: sessions.size });
+const healthCache = new Cache();
+
+app.get("/health", async (_req, res) => {
+  const cached = healthCache.get<{ status: string }>("health");
+  if (cached) {
+    res.status(cached.status === "ok" ? 200 : 503).json(cached);
+    return;
+  }
+
+  try {
+    await bidrento.listBuildings();
+    const result = { status: "ok", service: "mcp-bidrento", upstream: "ok" };
+    healthCache.set("health", result, TTL.MIN_1);
+    res.json(result);
+  } catch (e: unknown) {
+    const reason = e instanceof Error ? e.message : String(e);
+    log.warn("health_check_failed", { reason });
+    const result = { status: "down", service: "mcp-bidrento", upstream: "error", reason };
+    healthCache.set("health", result, TTL.SEC_30);
+    res.status(503).json(result);
+  }
 });
 
 // ─── MCP Endpoint ───────────────────────────────────────────────────

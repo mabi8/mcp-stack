@@ -487,6 +487,30 @@ The official [Grafana MCP server](https://github.com/grafana/mcp-grafana) will b
 
 The `log-mcp` service (repo: `github.com/mabi8/log-mcp`) was a custom MCP server that queried journald on box. It has been replaced by Grafana Cloud + Alloy. The service (`log-mcp.service`, port 3850) and its nginx config should be removed from box. The repo is archived.
 
+### Service Health Endpoints
+
+Each service exposes a `/health` endpoint that performs a real functional probe against its upstream dependency — not just a process liveness check. Health results are cached for 60s to avoid hammering upstream APIs.
+
+| Service | URL | Probe | What It Proves |
+|---------|-----|-------|----------------|
+| CenterDevice MCP | `https://box.makkib.com/health` | `GET /user/current` via any active session | OAuth token valid + CenterDevice API reachable |
+| Bidrento MCP | `https://box.makkib.com/bidrento/health` | `GET /api/rest/public/building` | API key valid + Bidrento API reachable |
+| Telegram bot | `https://box.makkib.com/bclai/health` | `getMe()` via Telegram Bot API | Bot token valid + Telegram reachable |
+
+**Response format:**
+- `200` + `{"status":"ok", "service":"...", "upstream":"ok"}` — fully operational
+- `503` + `{"status":"down", "service":"...", "upstream":"error", "reason":"..."}` — process alive but upstream unreachable
+- CenterDevice special case: `200` + `"upstream":"no_sessions"` means process is healthy but no user sessions exist to probe with
+
+**Grafana Synthetic Monitoring** (free tier) polls these endpoints every 60s. Alert rule: 2 consecutive failures → alert.
+
+```bash
+# Quick check all three
+curl -s https://box.makkib.com/health | jq .
+curl -s https://box.makkib.com/bidrento/health | jq .
+curl -s https://box.makkib.com/bclai/health | jq .
+```
+
 ---
 
 ## CenterDevice MCP — 46 Tools
@@ -600,8 +624,9 @@ Claude calls `check_service` with host and service name.
 ```bash
 systemctl status mcp-centerdevice mcp-bidrento bcl-telegram  # on box
 systemctl status mcp-vps-cmd                                          # on sss
-curl -s https://box.makkib.com/health | jq .
-curl -s https://sss.makkib.com/health | jq .
+curl -s https://box.makkib.com/health | jq .           # CenterDevice MCP (upstream probe)
+curl -s https://box.makkib.com/bidrento/health | jq .  # Bidrento MCP (upstream probe)
+curl -s https://box.makkib.com/bclai/health | jq .     # Telegram bot (upstream probe)
 ```
 
 ### Adding a New MCP Service (on box)
@@ -703,6 +728,7 @@ npx vitest run --reporter=verbose      # Verbose
 
 | Date | What |
 |------|------|
+| 2026-03-21 | **Service health endpoints.** All three box services (CenterDevice MCP, Bidrento MCP, Telegram bot) upgraded from dumb `/health` pings to cached upstream probes (60s TTL). CD probes `GET /user/current`, Bidrento probes `listBuildings()`, Telegram probes `getMe()`. Returns 200/503 with structured JSON. Designed for Grafana Synthetic Monitoring. |
 | 2026-03-21 | **Grafana Cloud monitoring.** Centralized logging and metrics via Grafana Cloud free tier. Grafana Alloy agents deployed on box + sss, shipping journald logs to Loki and host metrics to Prometheus. `log-mcp` decommissioned — replaced by Grafana Cloud + planned Grafana MCP server. |
 | 2026-03-21 | **Bastion + VPS Command MCP.** sss.makkib.com provisioned as bastion host. `@mcp-stack/vps-cmd` (7 tools) — tiered SSH command execution with passphrase-gated OAuth. All box services migrated from per-user (`cdapi`, `bdroapi`, `bclai`, `logmcp`) to single `ops` user. SSH hardened on sss (VERBOSE logging, key-only, allowlisted users). |
 | 2026-03-20 | **Monorepo migration.** cd-mcp + bidrento-mcp → mcp-stack. Shared core extracted. CD tools 55 → 46 (batch/single unified). `list_trash` removed. Session crash fix for old sessions. Bidrento: axios → fetch, session persistence. Nginx split. 47 tests. Structured JSON logging live. |

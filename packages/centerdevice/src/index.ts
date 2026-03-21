@@ -19,6 +19,8 @@ import { config as loadEnv } from "dotenv";
 
 import {
   createLogger,
+  Cache,
+  TTL,
   SessionStore,
   PendingCodeStore,
   ClientRegistry,
@@ -241,8 +243,37 @@ app.post("/oauth/token", createTokenHandler({
 
 // ─── Health ─────────────────────────────────────────────────────────
 
-app.get("/health", (_req, res) => {
-  res.json({ status: "ok", service: "mcp-centerdevice", sessions: sessions.size });
+const healthCache = new Cache();
+
+app.get("/health", async (_req, res) => {
+  const cached = healthCache.get<{ status: string; upstream: string }>("health");
+  if (cached) {
+    res.status(cached.status === "ok" ? 200 : 503).json(cached);
+    return;
+  }
+
+  // Pick any active session's CD client to probe upstream
+  const anyCtx = userContexts.values().next().value as UserMcpContext | undefined;
+  if (!anyCtx) {
+    // Process is fine, but no active sessions — can't verify upstream
+    const result = { status: "ok", service: "mcp-centerdevice", upstream: "no_sessions", sessions: 0 };
+    healthCache.set("health", result, TTL.MIN_1);
+    res.json(result);
+    return;
+  }
+
+  try {
+    await anyCtx.cdClient.jsonRequest("/user/current");
+    const result = { status: "ok", service: "mcp-centerdevice", upstream: "ok", sessions: userContexts.size };
+    healthCache.set("health", result, TTL.MIN_1);
+    res.json(result);
+  } catch (e: unknown) {
+    const reason = e instanceof Error ? e.message : String(e);
+    log.warn("health_check_failed", { reason });
+    const result = { status: "down", service: "mcp-centerdevice", upstream: "error", reason };
+    healthCache.set("health", result, TTL.SEC_30);
+    res.status(503).json(result);
+  }
 });
 
 // ─── Per-User MCP Sessions ──────────────────────────────────────────
