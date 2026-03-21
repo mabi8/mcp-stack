@@ -4,7 +4,8 @@
   "workspaces": [
     "packages/core",
     "packages/centerdevice",
-    "packages/bidrento"
+    "packages/bidrento",
+    "packages/vps-cmd"
   ],
   "scripts": {
     "build": "npm run build --workspaces",

@@ -1,0 +1,30 @@
+# /etc/sudoers.d/ops
+# Allows the ops user to manage whitelisted services without password.
+# Install on each worker VPS that sss connects to.
+
+# Service management (restart only — start/stop/enable/disable are tier 3)
+ops ALL=(root) NOPASSWD: /usr/bin/systemctl restart mcp-centerdevice
+ops ALL=(root) NOPASSWD: /usr/bin/systemctl restart mcp-bidrento
+ops ALL=(root) NOPASSWD: /usr/bin/systemctl restart bcl-telegram
+ops ALL=(root) NOPASSWD: /usr/bin/systemctl restart bcl-wa-bot
+ops ALL=(root) NOPASSWD: /usr/bin/systemctl restart log-mcp
+ops ALL=(root) NOPASSWD: /usr/bin/systemctl restart mcp-vps-cmd
+
+# Service status (read-only, but systemctl may need elevated perms for some units)
+ops ALL=(root) NOPASSWD: /usr/bin/systemctl status mcp-centerdevice
+ops ALL=(root) NOPASSWD: /usr/bin/systemctl status mcp-bidrento
+ops ALL=(root) NOPASSWD: /usr/bin/systemctl status bcl-telegram
+ops ALL=(root) NOPASSWD: /usr/bin/systemctl status bcl-wa-bot
+ops ALL=(root) NOPASSWD: /usr/bin/systemctl status log-mcp
+ops ALL=(root) NOPASSWD: /usr/bin/systemctl status mcp-vps-cmd
+
+# Journal access
+ops ALL=(root) NOPASSWD: /usr/bin/journalctl -u mcp-centerdevice *
+ops ALL=(root) NOPASSWD: /usr/bin/journalctl -u mcp-bidrento *
+ops ALL=(root) NOPASSWD: /usr/bin/journalctl -u bcl-telegram *
+ops ALL=(root) NOPASSWD: /usr/bin/journalctl -u bcl-wa-bot *
+ops ALL=(root) NOPASSWD: /usr/bin/journalctl -u log-mcp *
+ops ALL=(root) NOPASSWD: /usr/bin/journalctl -u mcp-vps-cmd *
+
+# Deploy script
+ops ALL=(root) NOPASSWD: /usr/bin/bash /home/ops/mcp-stack/deploy/update.sh *

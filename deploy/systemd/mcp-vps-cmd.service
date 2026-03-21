@@ -1,0 +1,29 @@
+[Unit]
+Description=VPS Command MCP Server (@mcp-stack/vps-cmd)
+After=network.target
+
+[Service]
+Type=simple
+User=ops
+Group=ops
+
+# WorkingDirectory = package dir (where .env and .sessions.json live)
+WorkingDirectory=/home/ops/mcp-stack/packages/vps-cmd
+
+# node resolves @mcp-stack/core via workspace symlinks from monorepo root
+ExecStart=/usr/bin/node dist/index.js
+
+Restart=on-failure
+RestartSec=5
+Environment=NODE_ENV=production
+Environment=LOG_LEVEL=info
+
+# Security hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=no
+ReadWritePaths=/home/ops/mcp-stack /var/log/vps-cmd
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

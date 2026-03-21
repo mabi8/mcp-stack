@@ -34,11 +34,22 @@ update_bidrento() {
   ok "Bidrento MCP updated and restarted"
 }
 
+update_vps_cmd() {
+  echo "Updating VPS Command MCP..."
+  sudo -u ops bash -c "cd /home/ops/mcp-stack && git pull && npm install && npm run build -w packages/core && npm run build -w packages/vps-cmd"
+  systemctl restart mcp-vps-cmd
+  sleep 2
+  journalctl -u mcp-vps-cmd -n 5 --no-pager
+  ok "VPS Command MCP updated and restarted"
+}
+
 case "${1:-}" in
   all)
     update_centerdevice
     echo ""
     update_bidrento
+    echo ""
+    update_vps_cmd
     ;;
   centerdevice|cd)
     update_centerdevice
@@ -46,8 +57,11 @@ case "${1:-}" in
   bidrento|bd)
     update_bidrento
     ;;
+  vps-cmd|vps)
+    update_vps_cmd
+    ;;
   *)
-    echo "Usage: sudo bash deploy/update.sh {all|centerdevice|bidrento}"
+    echo "Usage: sudo bash deploy/update.sh {all|centerdevice|bidrento|vps-cmd}"
     exit 1
     ;;
 esac

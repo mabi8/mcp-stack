@@ -1,0 +1,41 @@
+{
+  "hosts": {
+    "box": {
+      "hostname": "box.makkib.com",
+      "port": 22,
+      "username": "ops",
+      "services": [
+        "mcp-centerdevice",
+        "mcp-bidrento",
+        "bcl-telegram",
+        "bcl-wa-bot",
+        "log-mcp",
+        "mcp-vps-cmd"
+      ],
+      "repos": {
+        "mcp-stack": "/home/ops/mcp-stack",
+        "bcl-telegram-claude": "/home/ops/bcl-telegram-claude",
+        "log-mcp": "/home/ops/log-mcp"
+      },
+      "readablePaths": [
+        "/home/ops/mcp-stack",
+        "/home/ops/bcl-telegram-claude",
+        "/home/ops/log-mcp",
+        "/etc/nginx/sites-enabled/",
+        "/etc/systemd/system/",
+        "/var/log/"
+      ],
+      "blockedPaths": [
+        ".env",
+        ".sessions.json",
+        "/root",
+        "/etc/shadow",
+        "/etc/ssh/ssh_host_",
+        "id_rsa",
+        "id_ed25519",
+        ".gnupg"
+      ],
+      "deployScript": "/home/ops/mcp-stack/deploy/update.sh"
+    }
+  }
+}
