@@ -222,22 +222,59 @@ TLS for sss: Let's Encrypt via certbot + nginx, auto-renewed.
 
 Both VPS use iptables (v4 + v6, no ufw anywhere).
 
-**sss.makkib.com:**
-| Port | Rule | Why |
-|------|------|-----|
-| 22 | ACCEPT | SSH (Markus + Claude egress) |
-| 80 | ACCEPT | HTTP (certbot redirect) |
-| 443 | ACCEPT | HTTPS (MCP endpoint) |
-| * | DROP | Everything else |
+**sss.makkib.com (iptables v4):**
+```
+Chain INPUT (policy DROP)
+1  ACCEPT  lo (loopback)
+2  ACCEPT  state ESTABLISHED,RELATED
+3  ACCEPT  tcp dpt:22    (SSH — open, bastion is the entry point)
+4  ACCEPT  tcp dpt:80    (HTTP — certbot redirect)
+5  ACCEPT  tcp dpt:443   (HTTPS — MCP endpoint)
+6  DROP    all
+```
 
-**box.makkib.com:**
-| Port | Rule | Why |
-|------|------|-----|
-| 22 | ACCEPT from sss IP + Markus IP | SSH (bastion + direct) |
-| 80 | ACCEPT | HTTP (certbot redirect) |
-| 443 | ACCEPT | HTTPS (nginx → all MCPs) |
-| 9443 | ACCEPT | CenterDevice OAuth callback hits directly |
-| * | DROP | Everything else |
+**sss.makkib.com (ip6tables v6):**
+```
+Chain INPUT (policy DROP)
+1  ACCEPT  lo (loopback)
+2  ACCEPT  state ESTABLISHED,RELATED
+3  ACCEPT  icmpv6         (required for IPv6 neighbor discovery / path MTU)
+4  ACCEPT  tcp dpt:22
+5  ACCEPT  tcp dpt:80
+6  ACCEPT  tcp dpt:443
+7  DROP    all
+```
+
+**box.makkib.com (iptables v4):**
+```
+Chain INPUT (policy DROP)
+1  ACCEPT  tcp dpt:22 src 178.104.87.127  (SSH from sss ONLY)
+2  ACCEPT  state ESTABLISHED,RELATED
+3  ACCEPT  lo (loopback)
+4  ACCEPT  tcp dpt:80    (HTTP — certbot redirect)
+5  ACCEPT  tcp dpt:443   (HTTPS — nginx → all MCPs)
+6  ACCEPT  tcp dpt:9443  (CenterDevice OAuth callback)
+7  DROP    all
+```
+
+**box.makkib.com (ip6tables v6):**
+```
+Chain INPUT (policy DROP)
+1  ACCEPT  lo (loopback)
+2  ACCEPT  state ESTABLISHED,RELATED
+3  ACCEPT  icmpv6
+4  DROP    tcp dpt:22    (all IPv6 SSH blocked — sss connects via v4)
+5  ACCEPT  tcp dpt:80
+6  ACCEPT  tcp dpt:443
+7  ACCEPT  tcp dpt:9443
+8  DROP    all
+```
+
+**Hardening standard for all VPS (iptables, always v4+v6, no ufw):**
+- Flush, allow loopback, allow established/related, allow icmpv6 (v6 only)
+- Allow 22/80/443 (plus service-specific ports)
+- DROP all else, save to `/etc/iptables/rules.v4` and `rules.v6`
+- Always apply both v4 and v6 together
 
 ### SSH Hardening (sss)
 
