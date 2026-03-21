@@ -18,7 +18,7 @@ ok() { echo -e "${GREEN}✓${NC} $1"; }
 
 update_centerdevice() {
   echo "Updating CenterDevice MCP..."
-  sudo -u cdapi bash -c "cd /home/cdapi/mcp-stack && git pull && npm install && npm run build -w packages/core && npm run build -w packages/centerdevice"
+  sudo -u ops bash -c "cd /home/ops/mcp-stack && git pull && npm install && npm run build -w packages/core && npm run build -w packages/centerdevice"
   systemctl restart mcp-centerdevice
   sleep 2
   journalctl -u mcp-centerdevice -n 5 --no-pager
@@ -27,7 +27,7 @@ update_centerdevice() {
 
 update_bidrento() {
   echo "Updating Bidrento MCP..."
-  sudo -u bdroapi bash -c "cd /home/bdroapi/mcp-stack && git pull && npm install && npm run build -w packages/core && npm run build -w packages/bidrento"
+  sudo -u ops bash -c "cd /home/ops/mcp-stack && git pull && npm install && npm run build -w packages/core && npm run build -w packages/bidrento"
   systemctl restart mcp-bidrento
   sleep 2
   journalctl -u mcp-bidrento -n 5 --no-pager
