@@ -1,6 +1,6 @@
 # mcp-stack — Architecture Documentation
 
-> **Last updated:** 2026-03-21 · **Repo:** `github.com/mabi8/mcp-stack` (private)
+> **Last updated:** 2026-03-21 (Grafana Cloud migration) · **Repo:** `github.com/mabi8/mcp-stack` (private)
 > **Bastion:** `sss.makkib.com` (Hetzner, Ubuntu 24) — MCP gateway + SSH jump host
 > **Worker:** `box.makkib.com` (Hetzner CPX22, 4 vCPU, 8 GB RAM, Ubuntu 24)
 
@@ -22,7 +22,6 @@ A shared core package (`@mcp-stack/core`) provides logging, caching, OAuth 2.1, 
 
 Additional services on box (separate repos, not in monorepo):
 - **bcl-telegram-claude** — Telegram bot for BCL team (`@bclai_bot`)
-- **log-mcp** — Journald log querying MCP (`logs.makkib.com`)
 
 ---
 
@@ -55,7 +54,6 @@ Additional services on box (separate repos, not in monorepo):
                     │     ├──▶ :9444 (mcp-bidrento)                  │
                     │     │      └──▶ pro.bidrento.com               │
                     │     ├──▶ :3842 (bcl-telegram-claude)           │
-                    │     └──▶ :3850 (log-mcp)                       │
                     │                                                │
                     │  All services run as 'ops' user                │
                     │  SSH inbound: sss + Markus IP only             │
@@ -84,7 +82,7 @@ Worker VPS (box, future hosts) accept SSH only from sss's IP. No direct SSH from
 **box.makkib.com:**
 | User | Purpose |
 |------|---------|
-| `ops` | All services (mcp-centerdevice, mcp-bidrento, bcl-telegram, log-mcp) |
+| `ops` | All services (mcp-centerdevice, mcp-bidrento, bcl-telegram) |
 | `root` | System admin |
 
 All services on box run as `ops` from `/home/ops/`. Service isolation comes from systemd (working directories, environment files), not from separate Unix users.
@@ -213,7 +211,6 @@ All services on box run as the `ops` user. VPS Command MCP runs on sss as `ops`.
 | Bidrento MCP | box | `ops` | 9444 | `/home/ops/mcp-stack/packages/bidrento` | `mcp-bidrento.service` |
 | VPS Command MCP | sss | `ops` | 9445 | `/home/ops/mcp-stack/packages/vps-cmd` | `mcp-vps-cmd.service` |
 | Telegram Bot | box | `ops` | 3842 | `/home/ops/bcl-telegram-claude` | `bcl-telegram.service` |
-| Log MCP | box | `ops` | 3850 | `/home/ops/log-mcp` | `log-mcp.service` |
 
 TLS certs for box services: `/home/ops/tls/fullchain.pem` and `/home/ops/tls/privkey.pem`
 TLS for sss: Let's Encrypt via certbot + nginx, auto-renewed.
@@ -427,6 +424,42 @@ TLS via certbot with auto-renewal.
 
 All services emit structured JSON logs to stderr, captured by systemd/journald.
 
+### Grafana Cloud (centralized monitoring)
+
+Logs and metrics from both VPS are shipped to **Grafana Cloud** (free tier) via **Grafana Alloy** agents.
+
+| Component | What It Does |
+|-----------|-------------|
+| **Grafana Alloy** | Installed on box + sss. Ships journald logs → Loki, host metrics → Prometheus |
+| **Grafana Cloud Loki** | Centralized log storage, queryable via LogQL |
+| **Grafana Cloud Prometheus** | Host metrics (CPU, RAM, disk, network) via built-in `prometheus.exporter.unix` |
+| **Grafana Cloud dashboards** | Visualization, alerting, Telegram notifications |
+
+**Alloy config:** `/etc/alloy/config.alloy` on each host
+**Alloy credentials:** `/etc/alloy/alloy.env` (mode 0600)
+**Alloy service:** `systemctl status alloy`
+
+**Host labels:**
+| Host | Label |
+|------|-------|
+| box.makkib.com | `host="box"` |
+| sss.makkib.com | `host="sss"` |
+
+**Useful Grafana Explore queries (LogQL):**
+
+```
+{host="box"}                                    # All box logs
+{host="sss"}                                    # All sss logs
+{unit="bcl-telegram.service"}                   # BCL Telegram bot
+{unit="mcp-centerdevice.service"}               # CenterDevice MCP
+{unit="mcp-bidrento.service"}                   # Bidrento MCP
+{unit="mcp-vps-cmd.service"}                    # VPS Command MCP (on sss)
+{host="box"} |= "error"                        # Errors across all box services
+{unit="mcp-centerdevice.service"} | json | level="error"  # Structured error filtering
+```
+
+### Local journald (still available)
+
 ```bash
 # Real-time tool calls
 journalctl -u mcp-centerdevice -f | jq 'select(.event=="tool_call")'
@@ -446,18 +479,13 @@ journalctl -u mcp-centerdevice --since today | jq -r 'select(.event=="tool_call"
 | `debug` | No | Tool inputs, API request summaries, HTTP requests, cache hits |
 | `trace` | No | Full API request/response bodies |
 
-### Logs MCP Integration
+### Grafana MCP (planned)
 
-The Logs MCP at `logs.makkib.com` queries journald on box. Service names:
+The official [Grafana MCP server](https://github.com/grafana/mcp-grafana) will be deployed on box to allow Claude to query Loki logs and Prometheus metrics conversationally. This replaces the decommissioned `log-mcp`.
 
-| Service | journald Unit |
-|---------|--------------|
-| CenterDevice MCP | `mcp-centerdevice` |
-| Bidrento MCP | `mcp-bidrento` |
-| Telegram Bot | `bcl-telegram` |
-| Log MCP | `log-mcp` |
+### Decommissioned: log-mcp
 
-Note: VPS Command MCP runs on sss, not box — its logs are on sss's journald, not queryable from the Logs MCP.
+The `log-mcp` service (repo: `github.com/mabi8/log-mcp`) was a custom MCP server that queried journald on box. It has been replaced by Grafana Cloud + Alloy. The service (`log-mcp.service`, port 3850) and its nginx config should be removed from box. The repo is archived.
 
 ---
 
@@ -570,7 +598,7 @@ Claude calls `check_service` with host and service name.
 
 **Manual:**
 ```bash
-systemctl status mcp-centerdevice mcp-bidrento bcl-telegram log-mcp  # on box
+systemctl status mcp-centerdevice mcp-bidrento bcl-telegram  # on box
 systemctl status mcp-vps-cmd                                          # on sss
 curl -s https://box.makkib.com/health | jq .
 curl -s https://sss.makkib.com/health | jq .
@@ -675,6 +703,7 @@ npx vitest run --reporter=verbose      # Verbose
 
 | Date | What |
 |------|------|
+| 2026-03-21 | **Grafana Cloud monitoring.** Centralized logging and metrics via Grafana Cloud free tier. Grafana Alloy agents deployed on box + sss, shipping journald logs to Loki and host metrics to Prometheus. `log-mcp` decommissioned — replaced by Grafana Cloud + planned Grafana MCP server. |
 | 2026-03-21 | **Bastion + VPS Command MCP.** sss.makkib.com provisioned as bastion host. `@mcp-stack/vps-cmd` (7 tools) — tiered SSH command execution with passphrase-gated OAuth. All box services migrated from per-user (`cdapi`, `bdroapi`, `bclai`, `logmcp`) to single `ops` user. SSH hardened on sss (VERBOSE logging, key-only, allowlisted users). |
 | 2026-03-20 | **Monorepo migration.** cd-mcp + bidrento-mcp → mcp-stack. Shared core extracted. CD tools 55 → 46 (batch/single unified). `list_trash` removed. Session crash fix for old sessions. Bidrento: axios → fetch, session persistence. Nginx split. 47 tests. Structured JSON logging live. |
 | 2026-03-19 | cd-mcp: 55 tools. Audit trail. Split/merge PDF. `update_text_document`. |
