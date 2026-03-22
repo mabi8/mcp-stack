@@ -25,7 +25,8 @@ npm test                               # Run all tests (47 tests)
 
 ## Documentation
 
-See **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** for the full architecture reference — network layout, authentication flows, tool listings, API quirks, operations runbook, and environment variables.
+- **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** — Full architecture reference: network layout, auth flows, tool listings, operations runbook.
+- **[docs/ROADMAP.md](docs/ROADMAP.md)** — Known issues, planned work, completed milestones.
 
 ## Packages
 
