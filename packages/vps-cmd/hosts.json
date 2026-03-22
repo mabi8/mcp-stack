@@ -14,12 +14,12 @@
       ],
       "repos": {
         "mcp-stack": "/home/ops/mcp-stack",
-        "bcl-telegram-claude": "/home/bclai/bcl-telegram-claude",
+        "bcl-telegram-claude": "/home/ops/bcl-telegram-claude",
         "log-mcp": "/home/ops/log-mcp"
       },
       "readablePaths": [
         "/home/ops/mcp-stack",
-        "/home/bclai/bcl-telegram-claude",
+        "/home/ops/bcl-telegram-claude",
         "/home/ops/log-mcp",
         "/etc/nginx/sites-enabled/",
         "/etc/systemd/system/",

@@ -45,7 +45,7 @@ update_vps_cmd() {
 
 update_telegram() {
   echo "Updating BCL Telegram Bot..."
-  sudo -u bclai bash -c "cd /home/bclai/bcl-telegram-claude && git pull && npm install && npm run build && npm test"
+  sudo -u ops bash -c "cd /home/ops/bcl-telegram-claude && git pull && npm install && npm run build && npm test"
   systemctl restart bcl-telegram
   sleep 3
   journalctl -u bcl-telegram -n 5 --no-pager
