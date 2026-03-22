@@ -9,19 +9,15 @@
         "mcp-centerdevice",
         "mcp-bidrento",
         "bcl-telegram",
-        "bcl-wa-bot",
-        "log-mcp",
-        "mcp-vps-cmd"
+        "bcl-wa-bot"
       ],
       "repos": {
         "mcp-stack": "/home/ops/mcp-stack",
-        "bcl-telegram-claude": "/home/ops/bcl-telegram-claude",
-        "log-mcp": "/home/ops/log-mcp"
+        "bcl-telegram-claude": "/home/ops/bcl-telegram-claude"
       },
       "readablePaths": [
         "/home/ops/mcp-stack",
         "/home/ops/bcl-telegram-claude",
-        "/home/ops/log-mcp",
         "/etc/nginx/sites-enabled/",
         "/etc/systemd/system/",
         "/var/log/"
