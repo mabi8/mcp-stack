@@ -43,6 +43,15 @@ update_vps_cmd() {
   ok "VPS Command MCP updated and restarted"
 }
 
+update_telegram() {
+  echo "Updating BCL Telegram Bot..."
+  sudo -u bclai bash -c "cd /home/bclai/bcl-telegram-claude && git pull && npm install && npm run build && npm test"
+  systemctl restart bcl-telegram
+  sleep 3
+  journalctl -u bcl-telegram -n 5 --no-pager
+  ok "BCL Telegram Bot updated and restarted"
+}
+
 case "${1:-}" in
   all)
     update_centerdevice
@@ -50,6 +59,8 @@ case "${1:-}" in
     update_bidrento
     echo ""
     update_vps_cmd
+    echo ""
+    update_telegram
     ;;
   centerdevice|cd)
     update_centerdevice
@@ -60,8 +71,11 @@ case "${1:-}" in
   vps-cmd|vps)
     update_vps_cmd
     ;;
+  telegram|tg)
+    update_telegram
+    ;;
   *)
-    echo "Usage: sudo bash deploy/update.sh {all|centerdevice|bidrento|vps-cmd}"
+    echo "Usage: sudo bash deploy/update.sh {all|centerdevice|bidrento|vps-cmd|telegram}"
     exit 1
     ;;
 esac
