@@ -485,7 +485,7 @@ export function registerTools(
           tier: 3,
           executable: "bash",
           args: ["-c", `echo '${b64}' | base64 -d > ${path}`],
-          raw: `base64 -d > ${path} (${content.length} bytes)`,
+          raw: `echo '${b64}' | base64 -d > ${path}`,
           reason: "File write",
           requiresSudo: false,
         };
