@@ -193,7 +193,11 @@ const TIER1_RULES: Tier1Rule[] = [
     return null;
   }},
   { cmd: "docker",  validator: (args) => {
-    if (!["ps", "logs", "inspect", "stats"].includes(args[0])) return null; // non-read docker falls through
+    // Bare docker read commands: ps, logs, inspect, stats
+    if (["ps", "logs", "inspect", "stats"].includes(args[0])) return null;
+    // docker compose read commands: compose ps, compose logs
+    if (args[0] === "compose" && ["ps", "logs"].includes(args[1])) return null;
+    // Everything else (compose pull/up/down, run, exec, etc.) falls through to tier 2/3
     return null;
   }},
   { cmd: "npm",     validator: (args) => {
@@ -242,6 +246,13 @@ function isTier2(executable: string, args: string[], host: HostConfig): { match:
     return { match: true, requiresSudo: true };
   }
 
+  // Docker compose deploy commands (pull, up)
+  if (executable === "docker" && args[0] === "compose") {
+    if (["pull", "up"].includes(args[1])) {
+      return { match: true, requiresSudo: false }; // ops is in docker group
+    }
+  }
+
   return { match: false, requiresSudo: false };
 }
 
@@ -251,6 +262,7 @@ const ALWAYS_TIER3 = new Set([
   "rm", "rmdir", "mv", "chmod", "chown", "chgrp",
   "iptables", "ip6tables", "ufw", "nft",
   "systemctl enable", "systemctl disable", "systemctl stop", "systemctl mask",
+  "docker compose down", "docker compose rm", "docker volume",
   "nano", "vim", "vi", "sed", "awk", "tee", "dd",
   "useradd", "userdel", "usermod", "groupadd", "groupdel",
   "passwd", "chpasswd",
@@ -282,7 +294,8 @@ export function classify(raw: string, host: HostConfig): ClassificationResult {
 
   // Step 3: Check if always tier 3
   const fullCmdCheck = `${executable} ${args[0] || ""}`.trim();
-  if (ALWAYS_TIER3.has(executable) || ALWAYS_TIER3.has(fullCmdCheck)) {
+  const fullCmdCheck3 = args.length >= 2 ? `${executable} ${args[0]} ${args[1]}` : "";
+  if (ALWAYS_TIER3.has(executable) || ALWAYS_TIER3.has(fullCmdCheck) || (fullCmdCheck3 && ALWAYS_TIER3.has(fullCmdCheck3))) {
     return {
       ok: true,
       command: {
@@ -335,6 +348,13 @@ export function classify(raw: string, host: HostConfig): ClassificationResult {
           return {
             ok: true,
             command: { tier: 1, executable, args, raw, reason: `Read-only docker command (tier 1)`, requiresSudo: false },
+          };
+        }
+        // docker compose read commands
+        if (args[0] === "compose" && ["ps", "logs"].includes(args[1])) {
+          return {
+            ok: true,
+            command: { tier: 1, executable, args, raw, reason: `Read-only docker compose command (tier 1)`, requiresSudo: false },
           };
         }
         // Falls through

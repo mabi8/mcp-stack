@@ -51,6 +51,7 @@ Add a username field to the passphrase login form. Store in `session.data` so au
 
 | Date | Item |
 |------|------|
+| 2026-03-22 | VPS Command: Docker host support (`hostType: "docker"`, compose tier classification, bcl-vps1 registered) |
 | 2026-03-21 | Grafana Cloud monitoring (Alloy agents on box + sss, log-mcp decommissioned) |
 | 2026-03-21 | Service health endpoints (cached upstream probes, 200/503 structured JSON) |
 | 2026-03-21 | Bastion model + VPS Command MCP (sss, tiered SSH, passphrase-gated OAuth) |

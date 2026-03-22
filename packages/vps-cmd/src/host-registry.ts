@@ -5,7 +5,8 @@
  *   - SSH connection details (hostname, port, username)
  *   - Whitelisted services, repos, readable paths
  *   - Blocked path patterns (secrets, keys, etc.)
- *   - Deploy script path
+ *   - Deploy script path (systemd hosts) or deploy command (docker hosts)
+ *   - Host type: "systemd" (default) or "docker"
  */
 
 import { readFileSync } from "node:fs";
@@ -16,6 +17,8 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // ─── Types ───────────────────────────────────────────────────────────
 
+export type HostType = "systemd" | "docker";
+
 export interface HostConfig {
   hostname: string;
   port: number;
@@ -24,7 +27,9 @@ export interface HostConfig {
   repos: Record<string, string>;            // name → absolute path
   readablePaths: string[];
   blockedPaths: string[];                    // substring patterns
-  deployScript: string;
+  deployScript: string;                      // systemd hosts: path to update.sh
+  hostType: HostType;                        // "systemd" (default) or "docker"
+  deployCommand?: string;                    // docker hosts: e.g. "cd /opt/outline && docker compose pull && docker compose up -d"
 }
 
 export interface HostsFile {
@@ -39,18 +44,31 @@ export class HostRegistry {
   constructor(configPath?: string) {
     const file = configPath || resolve(__dirname, "..", "hosts.json");
     const raw = JSON.parse(readFileSync(file, "utf-8")) as HostsFile;
-    this.hosts = new Map(Object.entries(raw.hosts));
+
+    // Normalize: apply defaults for optional fields
+    const entries = Object.entries(raw.hosts).map(([alias, h]) => {
+      const normalized: HostConfig = {
+        ...h,
+        hostType: h.hostType || "systemd",
+        deployScript: h.deployScript || "",
+        deployCommand: h.deployCommand || undefined,
+      };
+      return [alias, normalized] as [string, HostConfig];
+    });
+
+    this.hosts = new Map(entries);
   }
 
   get(alias: string): HostConfig | undefined {
     return this.hosts.get(alias);
   }
 
-  list(): Array<{ alias: string; hostname: string; services: string[] }> {
+  list(): Array<{ alias: string; hostname: string; services: string[]; hostType: HostType }> {
     return Array.from(this.hosts.entries()).map(([alias, h]) => ({
       alias,
       hostname: h.hostname,
       services: h.services,
+      hostType: h.hostType,
     }));
   }
 

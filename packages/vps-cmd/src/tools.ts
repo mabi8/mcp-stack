@@ -3,8 +3,12 @@
  *
  * Tools:
  *   run_command        — Execute a command on a registered host (tier-classified)
- *   check_service      — Convenience: systemctl status + recent logs (tier 1)
+ *   check_service      — Convenience: service health check (tier 1)
+ *                        systemd hosts: systemctl status + recent logs
+ *                        docker hosts: docker inspect + docker logs
  *   deploy_service     — Convenience: full deploy flow (tier 2)
+ *                        systemd hosts: update.sh script
+ *                        docker hosts: deployCommand (e.g. docker compose pull && up)
  *   list_services      — List registered hosts and their services (tier 1)
  *   read_file          — Read a file from whitelisted paths (tier 1)
  *   write_file         — Write content to a file (tier 3)
@@ -156,11 +160,12 @@ export function registerTools(
 
   reg.tool(
     "check_service",
-    "Check the health of a service: systemctl status + last 30 log lines. " +
+    "Check the health of a service: systemctl status + last 30 log lines (systemd hosts), " +
+    "or docker inspect + last 30 log lines (docker hosts). " +
     "Tier 1 — executes immediately. Only works for whitelisted services.",
     {
       host: z.string().describe("Host alias"),
-      service: z.string().describe("Service name (e.g., 'mcp-centerdevice')"),
+      service: z.string().describe("Service name (e.g., 'mcp-centerdevice') or Docker container name (e.g., 'outline')"),
     },
     async (params) => {
       const { host: hostAlias, service } = params;
@@ -170,6 +175,35 @@ export function registerTools(
         throw new Error(`Service '${service}' not registered on host '${hostAlias}'. Available: ${host.services.join(", ")}`);
       }
 
+      if (host.hostType === "docker") {
+        // Docker host: use docker inspect + docker logs
+        const [inspectResult, logResult] = await Promise.all([
+          ssh.exec(hostAlias, host, `docker inspect --format='{{json .State}}' ${service}`, { timeoutMs: 10_000 }),
+          ssh.exec(hostAlias, host, `docker logs --tail 30 ${service}`, { timeoutMs: 10_000 }),
+        ]);
+
+        // Parse container state if possible
+        let state: Record<string, unknown> | null = null;
+        try {
+          state = JSON.parse(inspectResult.stdout);
+        } catch {
+          // If parse fails, just return raw output
+        }
+
+        return {
+          service,
+          host: hostAlias,
+          hostType: "docker",
+          container: {
+            state: state || inspectResult.stdout,
+            exitCode: inspectResult.exitCode,
+            inspectError: inspectResult.exitCode !== 0 ? inspectResult.stderr : undefined,
+          },
+          recentLogs: logResult.stdout || logResult.stderr, // docker logs writes to stderr for some images
+        };
+      }
+
+      // Systemd host: original behavior
       const [statusResult, logResult] = await Promise.all([
         ssh.exec(hostAlias, host, `systemctl status ${service}`, { timeoutMs: 10_000 }),
         ssh.exec(hostAlias, host, `journalctl -u ${service} --no-pager -n 30`, { timeoutMs: 10_000 }),
@@ -178,6 +212,7 @@ export function registerTools(
       return {
         service,
         host: hostAlias,
+        hostType: "systemd",
         status: {
           exitCode: statusResult.exitCode,
           output: statusResult.stdout,
@@ -191,12 +226,14 @@ export function registerTools(
 
   reg.tool(
     "deploy_service",
-    "Deploy a service: git pull → build core → build package → restart service. " +
+    "Deploy a service: git pull → build core → build package → restart service (systemd hosts), " +
+    "or run the configured deployCommand (docker hosts). " +
     "Tier 2 — returns an approval_id. Call confirm_execution to proceed. " +
     "Only one deploy per host at a time.",
     {
       host: z.string().describe("Host alias"),
       service: z.string().describe("Service name to deploy"),
+      reason: z.string().optional().describe("Why this action is being taken (for audit trail)"),
     },
     async (params) => {
       const { host: hostAlias, service } = params;
@@ -215,8 +252,40 @@ export function registerTools(
         };
       }
 
-      // Build the deploy command sequence
-      // Use the existing update.sh pattern
+      if (host.hostType === "docker") {
+        // Docker host: use deployCommand
+        if (!host.deployCommand) {
+          return {
+            error: `No deployCommand configured for docker host '${hostAlias}'. Add deployCommand to hosts.json.`,
+          };
+        }
+
+        const description = `Deploy ${service} on ${hostAlias}: ${host.deployCommand}`;
+
+        const commands: ClassifiedCommand[] = [
+          {
+            tier: 2,
+            executable: "bash",
+            args: ["-c", host.deployCommand],
+            raw: host.deployCommand,
+            reason: "Docker deploy command execution",
+            requiresSudo: false,  // ops is in docker group
+          },
+        ];
+
+        const approvalId = approvals.create(hostAlias, commands, 2, description);
+
+        return {
+          tier: 2,
+          approval_required: true,
+          approval_id: approvalId,
+          plan: description,
+          hostType: "docker",
+          instruction: `Call confirm_execution with approval_id '${approvalId}' to proceed.`,
+        };
+      }
+
+      // Systemd host: original update.sh pattern
       const deployTarget = service
         .replace("mcp-", "")               // mcp-centerdevice → centerdevice
         .replace("bcl-telegram", "telegram")
@@ -243,6 +312,7 @@ export function registerTools(
         approval_required: true,
         approval_id: approvalId,
         plan: description,
+        hostType: "systemd",
         instruction: `Call confirm_execution with approval_id '${approvalId}' to proceed.`,
       };
     },
@@ -268,7 +338,10 @@ export function registerTools(
       const hostAlias = approval.hostAlias;
 
       // For deploy commands, acquire lock
-      const isDeploy = approval.commands.some(c => c.executable === "bash" && c.args[0]?.includes("update.sh"));
+      const isDeploy = approval.commands.some(c =>
+        (c.executable === "bash" && c.args[0]?.includes("update.sh")) ||
+        (c.reason === "Docker deploy command execution")
+      );
       if (isDeploy) {
         const locked = approvals.acquireDeployLock(hostAlias, approval.id, approval.description);
         if (!locked) {

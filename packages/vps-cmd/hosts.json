@@ -4,6 +4,7 @@
       "hostname": "box.makkib.com",
       "port": 22,
       "username": "ops",
+      "hostType": "systemd",
       "services": [
         "mcp-centerdevice",
         "mcp-bidrento",
@@ -36,6 +37,41 @@
         ".gnupg"
       ],
       "deployScript": "/home/ops/mcp-stack/deploy/update.sh"
+    },
+    "bcl-vps1": {
+      "hostname": "vps1.infra.bcliving.de",
+      "port": 22,
+      "username": "ops",
+      "hostType": "docker",
+      "services": [
+        "outline",
+        "outline-postgres",
+        "outline-redis"
+      ],
+      "repos": {},
+      "readablePaths": [
+        "/opt/outline",
+        "/etc/nginx/sites-enabled/",
+        "/etc/nginx/sites-available/",
+        "/etc/systemd/system/",
+        "/var/log/nginx/"
+      ],
+      "blockedPaths": [
+        ".env",
+        "docker.env",
+        ".sessions.json",
+        "/root",
+        "/etc/shadow",
+        "/etc/ssh/ssh_host_",
+        "id_rsa",
+        "id_ed25519",
+        ".gnupg",
+        "CHANGE_",
+        "SECRET_KEY",
+        "CLIENT_SECRET"
+      ],
+      "deployScript": "",
+      "deployCommand": "cd /opt/outline && docker compose pull && docker compose up -d"
     }
   }
 }
