@@ -73,7 +73,8 @@
         "CLIENT_SECRET"
       ],
       "deployScript": "",
-      "deployCommand": "cd /opt/outline && docker compose pull && docker compose up -d"
+      "deployCommand": "cd /opt/outline && docker compose pull && docker compose up -d",
+      "systemdServices": ["alloy"]
     }
   }
 }

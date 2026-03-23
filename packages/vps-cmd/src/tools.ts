@@ -175,8 +175,10 @@ export function registerTools(
         throw new Error(`Service '${service}' not registered on host '${hostAlias}'. Available: ${host.services.join(", ")}`);
       }
 
-      if (host.hostType === "docker") {
-        // Docker host: use docker inspect + docker logs
+      // Determine check method: docker hosts may have systemd services (e.g. alloy, nginx)
+      const useDocker = host.hostType === "docker" && !host.systemdServices?.includes(service);
+
+      if (useDocker) {
         const [inspectResult, logResult] = await Promise.all([
           ssh.exec(hostAlias, host, `docker inspect --format='{{json .State}}' ${service}`, { timeoutMs: 10_000 }),
           ssh.exec(hostAlias, host, `docker logs --tail 30 ${service}`, { timeoutMs: 10_000 }),

@@ -30,6 +30,7 @@ export interface HostConfig {
   deployScript: string;                      // systemd hosts: path to update.sh
   hostType: HostType;                        // "systemd" (default) or "docker"
   deployCommand?: string;                    // docker hosts: e.g. "cd /opt/outline && docker compose pull && docker compose up -d"
+  systemdServices?: string[];                // docker hosts: services to check via systemctl instead of docker inspect
 }
 
 export interface HostsFile {
