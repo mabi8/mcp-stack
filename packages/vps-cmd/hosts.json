@@ -9,7 +9,8 @@
         "mcp-centerdevice",
         "mcp-bidrento",
         "bcl-telegram",
-        "bcl-wa-bot"
+        "bcl-wa-bot",
+        "alloy"
       ],
       "repos": {
         "mcp-stack": "/home/ops/mcp-stack",
@@ -20,10 +21,12 @@
         "/home/ops/bcl-telegram-claude",
         "/etc/nginx/sites-enabled/",
         "/etc/systemd/system/",
-        "/var/log/"
+        "/var/log/",
+        "/etc/alloy/"
       ],
       "blockedPaths": [
         ".env",
+        "alloy.env",
         ".sessions.json",
         "/root",
         "/etc/shadow",
@@ -42,7 +45,8 @@
       "services": [
         "outline",
         "outline-postgres",
-        "outline-redis"
+        "outline-redis",
+        "alloy"
       ],
       "repos": {},
       "readablePaths": [
@@ -50,10 +54,12 @@
         "/etc/nginx/sites-enabled/",
         "/etc/nginx/sites-available/",
         "/etc/systemd/system/",
-        "/var/log/nginx/"
+        "/var/log/nginx/",
+        "/etc/alloy/"
       ],
       "blockedPaths": [
         ".env",
+        "alloy.env",
         "docker.env",
         ".sessions.json",
         "/root",
