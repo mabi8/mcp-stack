@@ -46,6 +46,7 @@ export {
   SessionStore,
   PendingCodeStore,
   ClientRegistry,
+  type ClientRegistryOptions,
   isAllowedRedirectUri,
   escapeHtml,
   verifyPKCE,

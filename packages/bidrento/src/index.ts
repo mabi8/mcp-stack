@@ -62,7 +62,7 @@ if (!BIDRENTO_API_KEY) {
 const bidrento = new BidrentoClient({ baseUrl: BIDRENTO_BASE_URL, apiKey: BIDRENTO_API_KEY, logger: log });
 const sessions = new SessionStore({ file: resolve(__dirname, "..", ".sessions.json"), logger: log });
 const pendingCodes = new PendingCodeStore();
-const clients = new ClientRegistry();
+const clients = new ClientRegistry({ file: resolve(__dirname, "..", ".clients.json"), logger: log });
 
 // ─── Express App ────────────────────────────────────────────────────
 

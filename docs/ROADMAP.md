@@ -1,17 +1,10 @@
 # mcp-stack — Roadmap
 
-> **Last updated:** 2026-03-22
+> **Last updated:** 2026-03-23
 
 ---
 
 ## Known Issues
-
-### ClientRegistry not persisted across restarts
-**Severity:** Medium · **Affects:** All MCPs (core)
-
-`ClientRegistry` in `@mcp-stack/core/oauth.ts` stores DCR registrations in an in-memory `Map()`. When a service restarts, all registered `client_id`s vanish. Active sessions survive (persisted in `.sessions.json`), but token refresh fails because the `client_id` can no longer be validated. Every connected user must re-authenticate after a restart.
-
-**Fix:** Add file persistence to `ClientRegistry` (same pattern as `SessionStore` — JSON file, mode 0600, load on startup).
 
 ### Bidrento grant page captures no user identity
 **Severity:** Low · **Affects:** Bidrento MCP
@@ -51,6 +44,7 @@ Add a username field to the passphrase login form. Store in `session.data` so au
 
 | Date | Item |
 |------|------|
+| 2026-03-23 | ClientRegistry persisted to disk (`.clients.json`, mode 0600 — OAuth clients survive restarts) |
 | 2026-03-22 | VPS Command: Docker host support (`hostType: "docker"`, compose tier classification, bcl-vps1 registered) |
 | 2026-03-21 | Grafana Cloud monitoring (Alloy agents on box + sss, log-mcp decommissioned) |
 | 2026-03-21 | Service health endpoints (cached upstream probes, 200/503 structured JSON) |

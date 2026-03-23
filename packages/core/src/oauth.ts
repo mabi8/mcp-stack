@@ -221,13 +221,39 @@ export class PendingCodeStore {
 
 // ─── Client Registry ─────────────────────────────────────────────────
 
+export interface ClientRegistryOptions {
+  /** Path to persist clients (e.g., ".clients.json"). If omitted, in-memory only. */
+  file?: string;
+  logger?: Logger;
+}
+
 export class ClientRegistry {
   private clients = new Map<string, { clientSecret: string; redirectUris: string[] }>();
+  private readonly file?: string;
+  private readonly logger?: Logger;
+
+  constructor(options: ClientRegistryOptions = {}) {
+    this.file = options.file;
+    this.logger = options.logger;
+
+    // Load from disk
+    if (this.file && existsSync(this.file)) {
+      try {
+        const saved = JSON.parse(readFileSync(this.file, "utf-8")) as
+          [string, { clientSecret: string; redirectUris: string[] }][];
+        this.clients = new Map(saved);
+        this.logger?.info("clients_loaded", { count: this.clients.size });
+      } catch {
+        this.logger?.warn("clients_load_failed");
+      }
+    }
+  }
 
   register(redirectUris: string[]): { clientId: string; clientSecret: string } {
     const clientId = `client_${crypto.randomUUID()}`;
     const clientSecret = crypto.randomBytes(32).toString("hex");
     this.clients.set(clientId, { clientSecret, redirectUris });
+    this.persist();
     return { clientId, clientSecret };
   }
 
@@ -240,6 +266,21 @@ export class ClientRegistry {
     if (!client) return false;
     if (clientSecret && client.clientSecret !== clientSecret) return false;
     return true;
+  }
+
+  get size(): number {
+    return this.clients.size;
+  }
+
+  private persist(): void {
+    if (!this.file) return;
+    try {
+      writeFileSync(this.file, JSON.stringify([...this.clients], null, 2), { mode: 0o600 });
+    } catch (e) {
+      this.logger?.error("clients_persist_failed", {
+        error: e instanceof Error ? e.message : String(e),
+      });
+    }
   }
 }
 

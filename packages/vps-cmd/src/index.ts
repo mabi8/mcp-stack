@@ -65,7 +65,7 @@ const ALLOWED_REDIRECT_DOMAINS = ["claude.ai", "claude.com"];
 const log = createLogger("mcp-vps-cmd");
 const sessions = new SessionStore({ file: resolve(__dirname, "..", ".sessions.json"), logger: log });
 const pendingCodes = new PendingCodeStore();
-const clients = new ClientRegistry();
+const clients = new ClientRegistry({ file: resolve(__dirname, "..", ".clients.json"), logger: log });
 
 const hosts = new HostRegistry();
 const sshPool = new SSHPool(SSH_KEY_PATH, log);

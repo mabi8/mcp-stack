@@ -1,5 +1,8 @@
 import { describe, it, expect, afterEach } from "vitest";
 import crypto from "node:crypto";
+import { existsSync, unlinkSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import {
   SessionStore,
   PendingCodeStore,
@@ -204,6 +207,30 @@ describe("ClientRegistry", () => {
   it("validate fails for unknown client", () => {
     const registry = new ClientRegistry();
     expect(registry.validate("unknown_client")).toBe(false);
+  });
+
+  it("persists clients to disk and reloads on new instance", () => {
+    const file = join(tmpdir(), `clients-test-${Date.now()}.json`);
+    try {
+      const registry1 = new ClientRegistry({ file });
+      const { clientId, clientSecret } = registry1.register(["https://claude.ai/callback"]);
+      expect(registry1.size).toBe(1);
+
+      // New instance from same file should recover the client
+      const registry2 = new ClientRegistry({ file });
+      expect(registry2.size).toBe(1);
+      expect(registry2.validate(clientId, clientSecret)).toBe(true);
+      expect(registry2.get(clientId)?.redirectUris).toEqual(["https://claude.ai/callback"]);
+    } finally {
+      if (existsSync(file)) unlinkSync(file);
+    }
+  });
+
+  it("works in-memory when no file is given", () => {
+    const registry = new ClientRegistry();
+    const { clientId, clientSecret } = registry.register(["https://claude.ai/callback"]);
+    expect(registry.validate(clientId, clientSecret)).toBe(true);
+    expect(registry.size).toBe(1);
   });
 });
 
