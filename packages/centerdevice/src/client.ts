@@ -1161,8 +1161,10 @@ export class CenterDeviceClient {
     const keywords = srcDoc.getKeywords();
     const creator = srcDoc.getCreator();
     const producer = srcDoc.getProducer();
-    const creationDate = srcDoc.getCreationDate();
-    const modificationDate = srcDoc.getModificationDate();
+    let creationDate: Date | undefined;
+    let modificationDate: Date | undefined;
+    try { creationDate = srcDoc.getCreationDate(); } catch { /* malformed PDF date */ }
+    try { modificationDate = srcDoc.getModificationDate(); } catch { /* malformed PDF date */ }
 
     const results: { filename: string; documentId: string; pages: string }[] = [];
 
@@ -1257,8 +1259,10 @@ export class CenterDeviceClient {
     const keywords = firstDoc.getKeywords();
     const creator = firstDoc.getCreator();
     const producer = firstDoc.getProducer();
-    const creationDate = firstDoc.getCreationDate();
-    const modificationDate = firstDoc.getModificationDate();
+    let creationDate: Date | undefined;
+    let modificationDate: Date | undefined;
+    try { creationDate = firstDoc.getCreationDate(); } catch { /* malformed PDF date */ }
+    try { modificationDate = firstDoc.getModificationDate(); } catch { /* malformed PDF date */ }
 
     if (title) mergedDoc.setTitle(title);
     if (author) mergedDoc.setAuthor(author);
