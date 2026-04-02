@@ -310,6 +310,7 @@ function getOrCreateContext(session: OAuthSession): UserMcpContext {
   const audit = new AuditLogger({
     service: "mcp-centerdevice",
     formatDetails: cdAuditFormatter,
+    logsDir: process.env.AUDIT_LOG_DIR || "./logs",
   });
   audit.setUser(session.mcpClientId || "unknown");
 

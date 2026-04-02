@@ -13,6 +13,7 @@ services:
       - CLIENT_FILE=/app/data/.clients.json
       - TLS_CERT=
       - TLS_KEY=
+      - AUDIT_LOG_DIR=/app/data/logs
     volumes:
       - /home/ops/mcp-data/centerdevice:/app/data
     restart: unless-stopped
