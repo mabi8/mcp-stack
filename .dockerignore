@@ -1,0 +1,11 @@
+node_modules
+.git
+*.md
+docs/
+deploy/
+.env
+.sessions.json
+.clients.json
+.token-cache.json
+packages/bidrento
+packages/vps-cmd

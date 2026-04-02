@@ -66,9 +66,9 @@ const AUDIT_FOLDER = process.env.AUDIT_FOLDER || "8ef6f1ca-9a09-46d5-83de-f20b14
 // ─── Shared Infrastructure ──────────────────────────────────────────
 
 const log = createLogger("mcp-centerdevice");
-const sessions = new SessionStore({ file: resolve(__dirname, "..", ".sessions.json"), logger: log });
+const sessions = new SessionStore({ file: process.env.SESSION_FILE || resolve(__dirname, "..", ".sessions.json"), logger: log });
 const pendingCodes = new PendingCodeStore();
-const clients = new ClientRegistry({ file: resolve(__dirname, "..", ".clients.json"), logger: log });
+const clients = new ClientRegistry({ file: process.env.CLIENT_FILE || resolve(__dirname, "..", ".clients.json"), logger: log });
 
 const cdEncodedCredentials = Buffer.from(
   `${cdConfig.clientId}:${cdConfig.clientSecret}`,

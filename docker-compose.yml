@@ -1,0 +1,16 @@
+services:
+  centerdevice:
+    build:
+      context: .
+      dockerfile: packages/centerdevice/Dockerfile
+    ports:
+      - "127.0.0.1:9443:9443"
+    env_file: packages/centerdevice/.env
+    environment:
+      - NODE_ENV=production
+      - LOG_LEVEL=info
+      - SESSION_FILE=/app/data/.sessions.json
+      - CLIENT_FILE=/app/data/.clients.json
+    volumes:
+      - /home/ops/mcp-data/centerdevice:/app/data
+    restart: unless-stopped
