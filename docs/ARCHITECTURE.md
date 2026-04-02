@@ -48,14 +48,15 @@ Additional services on box (separate repos, not in monorepo):
                     ┌────────────────────────────────────────────────┐
                     │              box.makkib.com (worker)           │
                     │                                                │
-  Claude.ai ──HTTPS──▶ nginx :443                                   │
-                    │     ├──▶ :9443 (mcp-centerdevice)              │
+  Claude.ai ──HTTPS──▶ nginx :443 + :9443                            │
+                    │     ├──▶ :9543 (mcp-centerdevice, Docker)      │
                     │     │      └──▶ api.centerdevice.de/v2         │
-                    │     ├──▶ :9444 (mcp-bidrento)                  │
+                    │     ├──▶ :9444 (mcp-bidrento, systemd)         │
                     │     │      └──▶ pro.bidrento.com               │
                     │     ├──▶ :3842 (bcl-telegram-claude)           │
                     │                                                │
-                    │  All services run as 'ops' user                │
+                    │  Docker: centerdevice (compose, 127.0.0.1:9543)│
+                    │  systemd: bidrento, telegram                   │
                     │  SSH inbound: sss + Markus IP only             │
                     └────────────────────────────────────────────────┘
 ```
@@ -85,7 +86,7 @@ Worker VPS (box, future hosts) accept SSH only from sss's IP. No direct SSH from
 | `ops` | All services (mcp-centerdevice, mcp-bidrento, bcl-telegram) |
 | `root` | System admin |
 
-All services on box run as `ops` from `/home/ops/`. Service isolation comes from systemd (working directories, environment files), not from separate Unix users.
+All services on box run as `ops`. CenterDevice MCP runs in Docker Compose (container user `app`, uid 100). Other services use systemd. Service isolation comes from Docker containers and systemd working directories.
 
 ---
 
@@ -203,16 +204,38 @@ All MCPs implement the OAuth 2.1 flow that Claude.ai uses to authenticate with r
 
 ## Service Deployment
 
-All services on box run as the `ops` user. VPS Command MCP runs on sss as `ops`.
+VPS Command MCP runs on sss as `ops`. Box services are mixed Docker + systemd.
 
-| Service | Host | User | Port | Working Directory | systemd Unit |
-|---------|------|------|------|-------------------|-------------|
-| CenterDevice MCP | box | `ops` | 9443 | `/home/ops/mcp-stack/packages/centerdevice` | `mcp-centerdevice.service` |
-| Bidrento MCP | box | `ops` | 9444 | `/home/ops/mcp-stack/packages/bidrento` | `mcp-bidrento.service` |
-| VPS Command MCP | sss | `ops` | 9445 | `/home/ops/mcp-stack/packages/vps-cmd` | `mcp-vps-cmd.service` |
-| Telegram Bot | box | `ops` | 3842 | `/home/ops/bcl-telegram-claude` | `bcl-telegram.service` |
+| Service | Host | Runtime | Port (host) | Container Port | State Persistence |
+|---------|------|---------|-------------|----------------|-------------------|
+| CenterDevice MCP | box | Docker Compose | 9543 | 9443 | `/home/ops/mcp-data/centerdevice/` |
+| Bidrento MCP | box | systemd | 9444 | — | `/home/ops/mcp-stack/packages/bidrento/` |
+| VPS Command MCP | sss | systemd | 9445 | — | `/home/ops/mcp-stack/packages/vps-cmd/` |
+| Telegram Bot | box | systemd | 3842 | — | `/home/ops/bcl-telegram-claude/` |
 
-TLS certs for box services: `/home/ops/tls/fullchain.pem` and `/home/ops/tls/privkey.pem`
+### CenterDevice MCP (Docker)
+
+- `docker-compose.yml` at monorepo root
+- Container runs HTTP on :9443, mapped to host `127.0.0.1:9543`
+- Nginx terminates TLS on :443 and :9443 (legacy OAuth callback), proxies to :9543
+- State files (`.sessions.json`, `.clients.json`) in `/home/ops/mcp-data/centerdevice/`
+- Audit logs in `/home/ops/mcp-data/centerdevice/logs/`
+- Env vars: `SESSION_FILE`, `CLIENT_FILE`, `AUDIT_LOG_DIR`, `TLS_CERT=`, `TLS_KEY=` override defaults for Docker
+- The `:9443` nginx listener exists because CenterDevice's OAuth app has `https://box.makkib.com:9443/auth/callback` registered; changing requires re-registering the app
+
+**Deploy:**
+```bash
+cd /home/ops/mcp-stack && sudo -u ops git pull && sudo -u ops docker compose build centerdevice && sudo -u ops docker compose up -d centerdevice
+```
+
+**Logs:**
+```bash
+sudo -u ops docker compose logs centerdevice --tail 50
+```
+
+### Bidrento, VPS Command, Telegram (systemd)
+
+TLS certs for box systemd services: `/home/ops/tls/fullchain.pem` and `/home/ops/tls/privkey.pem`
 TLS for sss: Let's Encrypt via certbot + nginx, auto-renewed.
 
 ### Firewall
@@ -602,12 +625,15 @@ All write operations are logged with timing and result status. Destructive opera
 **Via VPS Command MCP (preferred):**
 Claude calls `deploy_service` → returns approval plan → Markus says "go" → Claude calls `confirm_execution` → deployed.
 
-**Manual on box:**
+**CenterDevice (Docker) on box:**
 ```bash
-sudo bash /home/ops/mcp-stack/deploy/update.sh all          # All services
-sudo bash /home/ops/mcp-stack/deploy/update.sh centerdevice # CD only
+cd /home/ops/mcp-stack && sudo -u ops git pull && sudo -u ops docker compose build centerdevice && sudo -u ops docker compose up -d centerdevice
+```
+
+**Bidrento + others (systemd) on box:**
+```bash
 sudo bash /home/ops/mcp-stack/deploy/update.sh bidrento     # BD only
-sudo bash /home/ops/mcp-stack/deploy/update.sh vps-cmd      # VPS Command only (on sss)
+sudo bash /home/ops/mcp-stack/deploy/update.sh all          # All systemd services
 ```
 
 **Manual on sss:**
@@ -622,7 +648,8 @@ Claude calls `check_service` with host and service name.
 
 **Manual:**
 ```bash
-systemctl status mcp-centerdevice mcp-bidrento bcl-telegram  # on box
+sudo -u ops docker compose logs centerdevice --tail 20       # on box (Docker)
+systemctl status mcp-bidrento bcl-telegram                   # on box (systemd)
 systemctl status mcp-vps-cmd                                          # on sss
 curl -s https://box.makkib.com/health | jq .           # CenterDevice MCP (upstream probe)
 curl -s https://box.makkib.com/bidrento/health | jq .  # Bidrento MCP (upstream probe)
@@ -652,7 +679,7 @@ curl -s https://box.makkib.com/bclai/health | jq .     # Telegram bot (upstream 
 
 | Problem | Fix |
 |---------|-----|
-| Claude can't connect to MCP | `systemctl status mcp-{service}`, check nginx, iptables |
+| Claude can't connect to MCP | Docker: `docker compose logs centerdevice`; systemd: `systemctl status mcp-{service}`; check nginx, iptables |
 | OAuth loops | Service restarted mid-flow. Remove + re-add MCP in Claude settings |
 | CenterDevice 401 | CD tokens expired. User re-authenticates via Claude |
 | "Session missing CD tokens" | Old pre-refactor session. Auto-prompts re-auth |
@@ -728,6 +755,7 @@ npx vitest run --reporter=verbose      # Verbose
 
 | Date | What |
 |------|------|
+| 2026-04-02 | **CenterDevice MCP dockerized.** Migrated from systemd to Docker Compose. Multi-stage Dockerfile (node:22-alpine). Nginx terminates TLS on :443 and :9443 (legacy OAuth callback), proxies HTTP to container on :9543. State files and audit logs on host bind-mount at `/home/ops/mcp-data/centerdevice/`. Bidrento remains on systemd. |
 | 2026-03-21 | **Service health endpoints.** All three box services (CenterDevice MCP, Bidrento MCP, Telegram bot) upgraded from dumb `/health` pings to cached upstream probes (60s TTL). CD probes `GET /user/current`, Bidrento probes `listBuildings()`, Telegram probes `getMe()`. Returns 200/503 with structured JSON. Designed for Grafana Synthetic Monitoring. |
 | 2026-03-21 | **Grafana Cloud monitoring.** Centralized logging and metrics via Grafana Cloud free tier. Grafana Alloy agents deployed on box + sss, shipping journald logs to Loki and host metrics to Prometheus. `log-mcp` decommissioned — replaced by Grafana Cloud + planned Grafana MCP server. |
 | 2026-03-21 | **Bastion + VPS Command MCP.** sss.makkib.com provisioned as bastion host. `@mcp-stack/vps-cmd` (7 tools) — tiered SSH command execution with passphrase-gated OAuth. All box services migrated from per-user (`cdapi`, `bdroapi`, `bclai`, `logmcp`) to single `ops` user. SSH hardened on sss (VERBOSE logging, key-only, allowlisted users). |
