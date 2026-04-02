@@ -11,6 +11,8 @@ services:
       - LOG_LEVEL=info
       - SESSION_FILE=/app/data/.sessions.json
       - CLIENT_FILE=/app/data/.clients.json
+      - TLS_CERT=
+      - TLS_KEY=
     volumes:
       - /home/ops/mcp-data/centerdevice:/app/data
     restart: unless-stopped
