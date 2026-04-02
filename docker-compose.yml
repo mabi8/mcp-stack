@@ -4,7 +4,7 @@ services:
       context: .
       dockerfile: packages/centerdevice/Dockerfile
     ports:
-      - "127.0.0.1:9443:9443"
+      - "127.0.0.1:9543:9443"
     env_file: packages/centerdevice/.env
     environment:
       - NODE_ENV=production
